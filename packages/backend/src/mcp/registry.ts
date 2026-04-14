@@ -14,7 +14,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { MCPToolCallLog, MCPToolResult, MCPServerConfig } from './types';
-import { v4 as uuidv4 } from 'crypto';
+// import { v4 as uuidv4 } from 'crypto';
 
 interface RegisteredServer {
   server: McpServer;

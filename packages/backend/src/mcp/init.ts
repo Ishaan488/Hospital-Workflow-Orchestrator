@@ -9,6 +9,7 @@
  */
 
 import { mcpRegistry } from './registry';
+import { initEHRMCP } from './ehr';
 
 /**
  * Initialize all MCP servers and register them.
@@ -17,7 +18,9 @@ import { mcpRegistry } from './registry';
 export async function initializeMCPServers(): Promise<void> {
   console.log('\n📡 Initializing MCP servers...');
 
-  // Segment 2.2: EHR MCP — will be added
+  // Segment 2.2: EHR MCP
+  await initEHRMCP();
+
   // Segment 2.3: Insurance MCP — will be added
   // Segment 2.4: Scheduling MCP — will be added
   // Segment 2.5: Notification MCP — will be added

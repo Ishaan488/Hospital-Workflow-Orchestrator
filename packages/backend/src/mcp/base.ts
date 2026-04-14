@@ -15,20 +15,33 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import type { MCPServerConfig } from './types';
 
 /**
- * Creates an MCP server instance with the given config.
- * Returns both the server (for registering tools) and a connected client (for calling tools).
+ * Phase 1: Creates an MCP server instance (tools NOT yet connected).
+ * Register all tools on the returned server BEFORE calling connectMCPServer().
  */
-export async function createMCPServer(config: MCPServerConfig): Promise<{
+export function createMCPServer(config: MCPServerConfig): {
   server: McpServer;
-  client: Client;
   config: MCPServerConfig;
-}> {
-  // Create the MCP server
+} {
   const server = new McpServer({
     name: config.name,
     version: config.version,
   });
 
+  return { server, config };
+}
+
+/**
+ * Phase 2: Connect the MCP server to an in-memory transport and return a client.
+ * Call this AFTER all tools have been registered on the server.
+ */
+export async function connectMCPServer(
+  server: McpServer,
+  config: MCPServerConfig
+): Promise<{
+  server: McpServer;
+  client: Client;
+  config: MCPServerConfig;
+}> {
   // Create an in-memory transport pair (client <-> server)
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
