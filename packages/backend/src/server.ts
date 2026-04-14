@@ -2,6 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { patientRoutes, appointmentRoutes, workflowRoutes, approvalRoutes } from './routes';
+import mcpDebugRoutes from './routes/mcp-debug';
+import { initializeMCPServers } from './mcp/init';
 
 dotenv.config();
 
@@ -44,13 +46,24 @@ app.use('/api/patients', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/approvals', approvalRoutes);
+app.use('/api/mcp', mcpDebugRoutes);
 
 // --- Start Server ---
-app.listen(PORT, () => {
-  console.log(`\n🏥 Hospital Workflow Orchestrator`);
-  console.log(`   Server running on http://localhost:${PORT}`);
-  console.log(`   Health check:     http://localhost:${PORT}/health`);
-  console.log(`   API root:         http://localhost:${PORT}/api\n`);
+async function start() {
+  // Initialize MCP servers before accepting requests
+  await initializeMCPServers();
+
+  app.listen(PORT, () => {
+    console.log(`🏥 Hospital Workflow Orchestrator`);
+    console.log(`   Server running on http://localhost:${PORT}`);
+    console.log(`   Health check:     http://localhost:${PORT}/health`);
+    console.log(`   API root:         http://localhost:${PORT}/api\n`);
+  });
+}
+
+start().catch((err) => {
+  console.error('❌ Failed to start server:', err);
+  process.exit(1);
 });
 
 export default app;
