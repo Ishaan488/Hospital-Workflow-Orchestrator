@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { patientRoutes, appointmentRoutes, workflowRoutes, approvalRoutes } from './routes';
 
 dotenv.config();
 
@@ -37,6 +38,12 @@ app.get('/api', (_req, res) => {
     },
   });
 });
+
+// --- Routes ---
+app.use('/api/patients', patientRoutes);
+app.use('/api/appointments', appointmentRoutes);
+app.use('/api/workflows', workflowRoutes);
+app.use('/api/approvals', approvalRoutes);
 
 // --- Start Server ---
 app.listen(PORT, () => {
