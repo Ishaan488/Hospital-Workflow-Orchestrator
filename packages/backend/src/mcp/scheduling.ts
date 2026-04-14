@@ -198,7 +198,7 @@ export async function initSchedulingMCP(): Promise<void> {
       }],
     };
   }
-  server.tool('book_appointment', 'Book a new appointment for a patient', bookAppointmentSchema, bookAppointmentHandler);
+  server.tool('book_appointment', 'Book a new appointment for a patient', bookAppointmentSchema as any, bookAppointmentHandler as any);
 
   // Phase 2: Connect transport AFTER all tools are registered
   const { client } = await connectMCPServer(server, config);

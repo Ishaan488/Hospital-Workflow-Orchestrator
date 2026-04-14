@@ -76,7 +76,7 @@ export async function initEHRMCP(): Promise<void> {
       content: [{ type: "text", text: JSON.stringify(response) }],
     };
   }
-  server.tool('get_patient_profile', 'Fetch a patient profile including demographics, insurance, and uploaded documents', getPatientProfileSchema, getPatientProfileHandler);
+  server.tool('get_patient_profile', 'Fetch a patient profile including demographics, insurance, and uploaded documents', getPatientProfileSchema as any, getPatientProfileHandler as any);
 
   // ─── Tool: get_appointment_details ─────────────────────
   const getAppointmentDetailsSchema = {
