@@ -13,6 +13,7 @@ import { initEHRMCP } from './ehr';
 import { initInsuranceMCP } from './insurance';
 import { initSchedulingMCP } from './scheduling';
 import { initNotificationMCP } from './notifications';
+import { initTaskAuditMCP } from './workflow_management';
 
 /**
  * Initialize all MCP servers and register them.
@@ -33,7 +34,8 @@ export async function initializeMCPServers(): Promise<void> {
   // Segment 2.5: Notification MCP
   await initNotificationMCP();
 
-  // Segment 2.6: Task/Audit MCP — will be added
+  // Segment 2.6: Task/Audit MCP
+  await initTaskAuditMCP();
 
   const servers = mcpRegistry.listServers();
   console.log(`✅ ${servers.length} MCP server(s) initialized\n`);
