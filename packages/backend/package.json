@@ -13,11 +13,12 @@
     "db:seed": "ts-node-dev --transpile-only src/db/seed.ts"
   },
   "dependencies": {
+    "@google/genai": "^1.50.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.40.1",
     "express": "^4.21.2",
-    "@modelcontextprotocol/sdk": "^1.12.1",
     "pg": "^8.13.3",
     "zod": "^3.24.2"
   },
