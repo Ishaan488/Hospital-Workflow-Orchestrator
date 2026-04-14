@@ -183,7 +183,7 @@ export async function initInsuranceMCP(): Promise<void> {
       }) }],
     };
   }
-  server.tool('verify_insurance_eligibility', 'Verify if a patient has active, eligible insurance coverage', verifyEligibilitySchema, verifyEligibilityHandler);
+  server.tool('verify_insurance_eligibility', 'Verify if a patient has active, eligible insurance coverage', verifyEligibilitySchema as any, verifyEligibilityHandler as any);
 
   // ─── Tool: check_prior_authorization ───────────────────
   const checkPriorAuthSchema = {
