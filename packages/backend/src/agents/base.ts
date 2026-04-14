@@ -1,52 +1,112 @@
-import { broker, AgentMessage } from './broker';
+import { a2aBroker } from '../a2a/broker';
+import { AgentCard, A2ATask, Capability, TaskStatusUpdate } from '../a2a/types';
 import { mcpRegistry } from '../mcp/registry';
 import { db } from '../db/connection';
-import { auditLogs, workflowTasks, workflows } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { auditLogs, workflowTasks } from '../db/schema';
+import { randomUUID } from 'crypto';
 
 /**
  * Abstract BaseAgent Component.
  * Every specific agent (Intake, Insurance, Orchestrator) extends this class.
- * Provides built-in connectivity to the Message Broker and MCP Tools.
+ * Provides built-in connectivity to the A2A Event Broker and MCP Tools.
  */
 export abstract class BaseAgent {
   public readonly name: string;
   public readonly description: string;
+  public readonly capabilities: Capability[];
+  public readonly endpointUrl: string;
 
-  constructor(name: string, description: string) {
+  constructor(name: string, description: string, capabilities: Capability[] = [], endpointUrl?: string) {
     this.name = name;
     this.description = description;
+    this.capabilities = capabilities;
+    this.endpointUrl = endpointUrl || `http://localhost:4000/a2a/${name}`;
   }
 
   /**
-   * Called to startup the agent. Agents should register their subscriptions here.
+   * Generates the AgentCard for A2A discovery.
    */
-  public abstract start(): void;
-
-  /**
-   * Helper to subscribe to broker events without needing the direct broker reference.
-   */
-  protected subscribe<T = any>(
-    topic: string,
-    handler: (message: AgentMessage<T>) => Promise<void> | void
-  ): void {
-    broker.subscribe(topic, this.name, handler.bind(this));
+  public getAgentCard(): AgentCard {
+    return {
+      name: this.name,
+      description: this.description,
+      capabilities: this.capabilities,
+      endpointUrl: this.endpointUrl,
+      version: '1.0.0'
+    };
   }
 
   /**
-   * Helper to publish messages to other agents.
+   * Called to startup the agent. Subscribes the agent to its inbound A2A task queue.
    */
-  protected async publish<T>(
-    topic: string,
-    payload: T,
-    options?: { target?: string; workflowId?: string; taskId?: string }
-  ): Promise<void> {
-    await broker.publish(topic, this.name, payload, options);
+  public start(): void {
+    a2aBroker.onTaskAssigned(this.name, this.handleTaskWrapper.bind(this));
+    console.log(`[AGENT] ${this.name} started and listening for tasks.`);
+  }
+
+  /**
+   * Abstract method that subclasses must implement to process an incoming A2A task.
+   */
+  public abstract handleTask(task: A2ATask): Promise<void>;
+
+  /**
+   * Internal wrapper to catch errors and enforce audit logging during task handling.
+   */
+  private async handleTaskWrapper(task: A2ATask): Promise<void> {
+    try {
+      // Auto-update task status to working
+      await this.sendStatusUpdate(task.id, 'working');
+      await this.logAudit(task.workflowId, `Started processing task ${task.id}`, { from: task.fromAgent });
+      
+      await this.handleTask(task);
+      
+    } catch (err) {
+      console.error(`[${this.name}] Failed to handle task ${task.id}:`, err);
+      // Auto-fail the task on unhandled errors
+      await this.sendStatusUpdate(task.id, 'failed', err instanceof Error ? err.message : 'Unknown error');
+      await this.logAudit(task.workflowId, `Failed processing task ${task.id}`, { error: err });
+    }
+  }
+
+  /**
+   * Dispatches a new task to another agent.
+   */
+  protected async sendA2ATask(targetAgent: string, inputMessage: any, workflowId?: string): Promise<string> {
+    const task: A2ATask = {
+      id: randomUUID(),
+      workflowId,
+      fromAgent: this.name,
+      toAgent: targetAgent,
+      status: 'submitted',
+      inputMessage: {
+        id: randomUUID(),
+        role: 'agent',
+        parts: [{ type: 'text', text: typeof inputMessage === 'string' ? inputMessage : JSON.stringify(inputMessage) }],
+        timestamp: new Date()
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    await a2aBroker.sendTask(task);
+    return task.id;
+  }
+
+  /**
+   * Sends a status update back to the sender of a task.
+   */
+  protected async sendStatusUpdate(taskId: string, status: A2ATask['status'], progressMessage?: string): Promise<void> {
+    await a2aBroker.updateTaskStatus({
+      taskId,
+      status,
+      progressMessage,
+      updatedAt: new Date()
+    });
   }
 
   /**
    * Helper to execute a tool from any registered MCP Server.
-   * Handles registry lookup and response unwrapping.
+   * Handles registry lookup and unified responses.
    */
   protected async callMCPTool(
     serverName: string,
@@ -72,29 +132,17 @@ export abstract class BaseAgent {
   /**
    * Log internal thoughts or processing steps to the database audit trail.
    */
-  protected async logActivity(action: string, details?: Record<string, any>, workflowId?: string, taskId?: string): Promise<void> {
+  protected async logAudit(workflowId: string | undefined, action: string, details?: Record<string, any>): Promise<void> {
     try {
       await db.insert(auditLogs).values({
         agent: this.name,
         action,
         details: details || {},
         workflowId: workflowId || null,
-        taskId: taskId || null,
       });
       console.log(`[${this.name}] ACTION: ${action}`);
     } catch (err) {
       console.error(`[${this.name}] Failed to log activity:`, err);
     }
-  }
-
-  /**
-   * Helper to update the status of a Workflow Task in the database.
-   */
-  protected async updateTaskStatus(taskId: string, status: 'in_progress' | 'completed' | 'failed' | 'waiting_approval', output?: Record<string, any>): Promise<void> {
-    await this.callMCPTool('workflow_management', 'update_task_status', {
-      task_id: taskId,
-      status,
-      output,
-    });
   }
 }
