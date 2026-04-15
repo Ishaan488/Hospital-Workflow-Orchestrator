@@ -1,0 +1,47 @@
+
+> hospital-workflow-orchestrator@0.1.0 dev:backend
+> npm run dev --workspace=packages/backend
+
+
+> @hospital-orchestrator/backend@0.1.0 dev
+> ts-node-dev --respawn --transpile-only --exit-child src/server.ts
+
+[INFO] 12:27:29 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+
+📡 Initializing MCP servers...
+   📡 MCP registered: ehr (Electronic Health Records — patient profiles, appointments, documents)
+   📡 MCP registered: insurance (Insurance verification, eligibility checks, and prior authorization)
+   📡 MCP registered: scheduling (Scheduling system — doctor search, availability lookups, and booking)
+   📡 MCP registered: notifications (Patient notification system — Email and SMS simulation)
+   📡 MCP registered: workflow_management (Workflow management system — task tracking, auditing, and approvals)
+✅ 5 MCP server(s) initialized
+
+--- Starting A2A Agent Services ---
+[AGENT] IntakeAgent started and listening for tasks.
+[AGENT] InsuranceAgent started and listening for tasks.
+[AGENT] SchedulingAgent started and listening for tasks.
+[AGENT] CommunicationAgent started and listening for tasks.
+[AGENT] OrchestratorAgent started and listening for tasks.
+--- A2A Agents Online ---
+
+🏥 MedOrchestra — Hospital AI Workflow Platform
+   Server:        http://localhost:4000
+   Health:        http://localhost:4000/health
+   API:           http://localhost:4000/api
+   Global SSE:    http://localhost:4000/api/stream/global
+   Demo trigger:  POST http://localhost:4000/api/demo/trigger
+
+[SSE] Client connected: 1e68caef-8233-4f0d-b55c-ba1b2012f711 → watching workflow: global. Total: 1
+[SSE] Client connected: 7bc226d6-fd85-4753-9b5f-e7527e9d5ea5 → watching workflow: global. Total: 2
+[SSE] Client disconnected: 1e68caef-8233-4f0d-b55c-ba1b2012f711. Total: 1
+[SSE] Client connected: 74fa3f10-5cff-4898-8d90-011a8ebec0d6 → watching workflow: 771a7778-65ab-4f6c-8a72-41d5f9467ae9. Total: 2
+[SSE] Client connected: 39249a8e-0afc-4b97-af7b-65d99049408d → watching workflow: 771a7778-65ab-4f6c-8a72-41d5f9467ae9. Total: 3
+[SSE] Client disconnected: 39249a8e-0afc-4b97-af7b-65d99049408d. Total: 2
+[SSE] Client disconnected: 74fa3f10-5cff-4898-8d90-011a8ebec0d6. Total: 1
+[SSE] Client connected: 9196bce1-db94-46a9-8dfa-fc6a4696e3fa → watching workflow: global. Total: 2
+[SSE] Client disconnected: 9196bce1-db94-46a9-8dfa-fc6a4696e3fa. Total: 1
+[SSE] Client connected: 0542a37b-512a-424f-9634-124482beee23 → watching workflow: global. Total: 2
+[SSE] Client disconnected: 7bc226d6-fd85-4753-9b5f-e7527e9d5ea5. Total: 1
+[SSE] Client disconnected: 0542a37b-512a-424f-9634-124482beee23. Total: 0
+[SSE] Client connected: fe0b1c0b-fe56-4e43-a257-af863ff78969 → watching workflow: global. Total: 1
+[SSE] Client connected: dc569da7-8602-4b6a-8b6b-f9b343413731 → watching workflow: global. Total: 2

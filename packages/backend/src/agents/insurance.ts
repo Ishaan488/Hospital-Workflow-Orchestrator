@@ -57,116 +57,116 @@ export class InsuranceAgent extends BaseAgent {
     const targetAction = action || 'check_eligibility';
 
     if (targetAction === 'check_eligibility') {
-      await this.processInsuranceEligibility(task, patient_id, procedure_code || 'GEN-VISIT');
+      await this.processInsuranceEligibility(task, patient_id, procedure_code || 'general');
     } else {
       await this.sendStatusUpdate(task.id, 'failed', `Unknown action: ${targetAction}`);
     }
   }
 
   /**
-   * Calls the Insurance MCP to run the eligibility workflow
+   * Calls the Insurance MCP to run the eligibility workflow.
+   *
+   * MCP Tool Signatures:
+   *   verify_insurance_eligibility(patient_id) → { eligible: boolean, patientName, insuranceProvider, ... }
+   *   check_prior_authorization(patient_id, procedure_code) → { requiresPriorAuth: boolean, ... }
+   *   submit_prior_auth_request(patient_id, procedure_code, reason) → { success, authorizationId, ... }
    */
   private async processInsuranceEligibility(task: A2ATask, patientId: string, procedureCode: string): Promise<void> {
-    // 1. Verify basic eligibility
+    // ── Step 1: Verify base insurance eligibility ─────────────────────────
     await this.sendStatusUpdate(task.id, 'working', 'Verifying base insurance eligibility...');
     const eligibilityResult = await this.callMCPTool('insurance', 'verify_insurance_eligibility', {
-      patient_id: patientId
-    });
+      patient_id: patientId,
+    }, task.workflowId);
 
     if (eligibilityResult.error) {
-      // Revert task back to orchestrator or flag to human
-      await this.sendStatusUpdate(task.id, 'failed', eligibilityResult.message);
+      await this.sendStatusUpdate(task.id, 'failed', eligibilityResult.message || 'Eligibility check failed.');
       return;
     }
 
-    const isEligible = eligibilityResult.status === 'valid';
-    await this.logAudit(task.workflowId, `Eligibility check completed. Status: ${eligibilityResult.status}`, { eligibilityResult });
+    // MCP returns { eligible: boolean, hasInsurance: boolean, patientName, ... }
+    const isEligible: boolean = eligibilityResult.eligible === true;
+    await this.logAudit(task.workflowId, `Eligibility check completed. Eligible: ${isEligible}`, { eligibilityResult });
 
     if (!isEligible) {
-      // DIVERGENCE 1: Insurance is expired, inactive, or self-pay
-      await this.sendStatusUpdate(task.id, 'working', `Insurance issue detected (${eligibilityResult.status}). Contacting Communication Agent.`);
-      
+      // DIVERGENCE 1: Insurance is expired, inactive, or self-pay → notify patient
+      await this.sendStatusUpdate(task.id, 'working', `Insurance issue detected. Contacting patient via Communication Agent.`);
+
+      const patientName = eligibilityResult.patientName || 'Patient';
+      const reason = eligibilityResult.paymentMode === 'self_pay'
+        ? 'no insurance on file'
+        : `your policy appears to be expired or inactive`;
+
       const emailTaskPayload = {
         action: 'send_patient_reminder',
         patient_id: patientId,
-        message: `Hello ${eligibilityResult.patientName}. There appears to be an issue with your insurance on file (${eligibilityResult.status}). Please update your payment details or contact our billing desk.`
+        message: `Hello ${patientName}, there appears to be an issue with your insurance: ${reason}. Please contact our billing desk before your visit.`,
       };
 
-      // Fork a task to notify the patient
       await this.sendA2ATask('CommunicationAgent', emailTaskPayload, task.workflowId);
-      
-      // Conclude the insurance task as blocked
-      const report = {
+
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'blocked',
         reason: 'invalid_insurance',
-        details: eligibilityResult
-      };
-
-      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify(report));
+        details: eligibilityResult,
+      }));
       return;
     }
 
-    // 2. Insurance is valid. Check if Prior Authorization is required for this procedure.
+    // ── Step 2: Check if prior authorization is required ──────────────────
     await this.sendStatusUpdate(task.id, 'working', 'Insurance valid. Checking prior authorization requirements...');
     const priorAuthCheck = await this.callMCPTool('insurance', 'check_prior_authorization', {
-      insurance_id: eligibilityResult.insuranceId,
-      procedure_code: procedureCode
-    });
+      patient_id: patientId,       // ← Correct: MCP needs patient_id, not insurance_id
+      procedure_code: procedureCode,
+    }, task.workflowId);
 
     if (priorAuthCheck.error) {
-      await this.sendStatusUpdate(task.id, 'failed', priorAuthCheck.message);
+      await this.sendStatusUpdate(task.id, 'failed', priorAuthCheck.message || 'Prior auth check failed.');
       return;
     }
 
-    await this.logAudit(task.workflowId, `Prior auth check completed. Required: ${priorAuthCheck.required}`, { priorAuthCheck });
+    // MCP returns { requiresPriorAuth: boolean, isCovered: boolean, ... }
+    const requiresAuth: boolean = priorAuthCheck.requiresPriorAuth === true;
+    await this.logAudit(task.workflowId, `Prior auth check completed. Required: ${requiresAuth}`, { priorAuthCheck });
 
-    if (priorAuthCheck.required) {
-      // DIVERGENCE 2: We need to submit a prior authorization request!
-      await this.sendStatusUpdate(task.id, 'working', 'Prior auth required. Automatically submitting request to payer gateway...');
-      
+    if (requiresAuth) {
+      // DIVERGENCE 2: Submit a prior authorization request automatically
+      await this.sendStatusUpdate(task.id, 'working', 'Prior auth required. Automatically submitting request...');
+
       const submissionResult = await this.callMCPTool('insurance', 'submit_prior_auth_request', {
         patient_id: patientId,
         procedure_code: procedureCode,
-        clinical_notes: `Automated submission via Orchestrator based on Intake verification for ${procedureCode}.`
-      });
+        reason: `Automated submission via AI Orchestrator for procedure: ${procedureCode}.`, // ← Correct field name: 'reason'
+      }, task.workflowId);
 
       if (submissionResult.error) {
         await this.sendStatusUpdate(task.id, 'failed', `Prior Auth Submission Failed: ${submissionResult.message}`);
         return;
       }
 
-      await this.logAudit(task.workflowId, `Prior auth requested automatically`, { submissionResult });
+      await this.logAudit(task.workflowId, `Prior auth submitted automatically.`, { submissionResult });
 
-      // In a real system, the agent would poll or await a webhook. For POC, we just report it as pending.
-      // DIVERGENCE 3: High delay risk! Let Schedule Agent know it might need to provisionalize the slot.
-      await this.sendStatusUpdate(task.id, 'working', 'Pre-auth is pending. Recommending provisional hold to Scheduling Agent.');
-      
-      const schedulePayload = {
-        action: 'mark_provisional',
-        patient_id: patientId,
-        reason: 'Pending Insurance Pre-Auth'
-      };
-
-      await this.sendA2ATask('SchedulingAgent', schedulePayload, task.workflowId);
-
-      const report = {
+      // Signal the Orchestrator: auth is pending. Coordinator will decide scheduling hold.
+      // Do NOT chain to SchedulingAgent here — let the Orchestrator handle that coordination.
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'pending_authorization',
-        authReference: submissionResult.requestId,
-        details: 'Submitted pre-auth. Scheduled slot flagged as provisional.'
-      };
+        insurance_cleared: false,
+        prior_auth_pending: true,
+        authorizationId: submissionResult.authorizationId,
+        patient_id: patientId,
+        details: `Prior auth submitted. ID: ${submissionResult.authorizationId}. Awaiting insurer response.`,
+      }));
 
-      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify(report));
-      
     } else {
-      // PROCEED: No prior auth required! Entire billing pipeline cleared.
+      // PROCEED: No prior auth required — insurance fully cleared
       await this.sendStatusUpdate(task.id, 'working', 'No prior authorization required. Insurance fully cleared.');
 
-      const report = {
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'cleared_for_visit',
-        details: `Insurance verified. Procedure ${procedureCode} does not require prior authorization.`
-      };
-
-      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify(report));
+        insurance_cleared: true,
+        prior_auth_pending: false,
+        patient_id: patientId,
+        details: `Insurance verified. Procedure "${procedureCode}" is covered and does not require prior authorization.`,
+      }));
     }
   }
 }

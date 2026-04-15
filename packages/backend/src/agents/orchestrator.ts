@@ -5,10 +5,10 @@ import { workflowEngine } from '../workflows/engine';
 import { stateMachine } from '../workflows/state-machine';
 import { GoogleGenAI } from '@google/genai';
 import { SYSTEM_PROMPT, PLANNER_PROMPT_TEMPLATE, COORDINATOR_PROMPT_TEMPLATE } from './orchestrator-prompts';
+import { a2aBroker } from '../a2a/broker';
 
-// Initialize Gemini SDK
-// Requires GEMINI_API_KEY environment variable to be set
-const ai = new GoogleGenAI({});
+// Initialize Gemini SDK with API Key from environment (Unified SDK Syntax)
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export class OrchestratorAgent extends BaseAgent {
   constructor() {
@@ -18,6 +18,32 @@ export class OrchestratorAgent extends BaseAgent {
       []
     );
     agentCardRegistry.registerCard(this.getAgentCard());
+  }
+
+  /**
+   * Public entry point to create and begin a new workflow.
+   * Called by the event ingestion layer (webhook, demo route, etc.)
+   * 1. Creates the workflow record in the database.
+   * 2. Sends a self-addressed A2A task to kick off the planning phase.
+   * Returns the new workflow ID.
+   */
+  public async startWorkflow(triggerEvent: Record<string, any>): Promise<string> {
+    const workflowType = triggerEvent.type ?? 'pre_visit_intake';
+    const patientId = triggerEvent.patientId;
+
+    // Create the persisteed workflow row
+    const workflowId = await workflowEngine.createWorkflow(workflowType, triggerEvent, patientId);
+
+    await this.logAudit(workflowId, `Workflow created via trigger: ${workflowType}`, { triggerEvent });
+
+    // Self-dispatch: send a plan_workflow task to the Orchestrator's own queue
+    await this.sendA2ATask(
+      'OrchestratorAgent',
+      { action: 'plan_workflow', context: triggerEvent },
+      workflowId
+    );
+
+    return workflowId;
   }
 
   /**
@@ -52,11 +78,11 @@ export class OrchestratorAgent extends BaseAgent {
 
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: PLANNER_PROMPT_TEMPLATE(context),
+        model: 'gemini-flash-latest',
+        contents: [SYSTEM_PROMPT + "\n\n" + PLANNER_PROMPT_TEMPLATE(context)],
         config: {
-          systemInstruction: SYSTEM_PROMPT,
-          temperature: 0.2
+          temperature: 0.2,
+          responseMimeType: 'application/json'
         }
       });
 
@@ -84,9 +110,9 @@ export class OrchestratorAgent extends BaseAgent {
       // 3. Dispatch tasks that have ZERO dependencies (roots)
       await this.dispatchReadyTasks(workflowId);
 
-    } catch (err) {
-      await this.logAudit(workflowId, 'Gemini Planning Failed', { error: err });
-      await stateMachine.transition(workflowId, 'failed', 'Orchestrator failed to generate valid JSON plan.');
+    } catch (err: any) {
+      await this.logAudit(workflowId, 'Gemini Planning Failed', { error: err?.message || String(err) });
+      await stateMachine.transition(workflowId, 'failed', `Orchestrator failed: ${err?.message || 'Invalid JSON plan'}`);
     }
   }
 
@@ -109,11 +135,11 @@ export class OrchestratorAgent extends BaseAgent {
 
       try {
         const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: COORDINATOR_PROMPT_TEMPLATE(currentState || {}, output),
+          model: 'gemini-flash-latest',
+          contents: [SYSTEM_PROMPT + "\n\n" + COORDINATOR_PROMPT_TEMPLATE(currentState || {}, output)],
           config: {
-            systemInstruction: SYSTEM_PROMPT,
-            temperature: 0.1
+            temperature: 0.1,
+            responseMimeType: 'application/json'
           }
         });
 
@@ -129,12 +155,17 @@ export class OrchestratorAgent extends BaseAgent {
 
         // If Gemini realized it forgot something, or an error requires new steps:
         if (decision.schedule_new_tasks && decision.schedule_new_tasks.length > 0) {
-          // Logic for dynamic re-planning goes here
+          for (const t of decision.schedule_new_tasks) {
+            const deps = t.dependsOn || [];
+            await workflowEngine.scheduleTask(workflowId, t.agent, t.action, t.payload || {}, deps);
+          }
+          await this.logAudit(workflowId, 'Gemini generated follow-up tasks', { plan: decision.schedule_new_tasks });
+          await this.dispatchReadyTasks(workflowId);
         }
 
-      } catch (err) {
-         await this.logAudit(workflowId, 'Gemini Coordinator Evaluation Failed', { error: err });
-         await stateMachine.transition(workflowId, 'failed', 'Invalid LLM response during coordination.');
+      } catch (err: any) {
+         await this.logAudit(workflowId, 'Gemini Coordinator Evaluation Failed', { error: err?.message || String(err) });
+         await stateMachine.transition(workflowId, 'failed', `Evaluation failed: ${err?.message || 'Invalid LLM response'}`);
       }
     }
   }
@@ -152,7 +183,18 @@ export class OrchestratorAgent extends BaseAgent {
         ...(task.input as any)
       };
 
-      await this.sendA2ATask(task.agent, a2aPayload, workflowId);
+      const a2aTaskId = await this.sendA2ATask(task.agent, a2aPayload, workflowId);
+      
+      // Wait for the A2A task to finish, then trigger the Orchestrator's coordinate_step
+      a2aBroker.onTaskUpdate(a2aTaskId, async (update) => {
+         if (update.status === 'completed' || update.status === 'failed') {
+            await this.sendA2ATask('OrchestratorAgent', {
+               action: 'coordinate_step',
+               completedTaskId: task.id, // the internal DAG node ID
+               output: update.progressMessage ? JSON.parse(update.progressMessage) : { status: update.status }
+            }, workflowId);
+         }
+      });
       
       // Update DB to register it's in flight
       // (In a full scale system we'd track "in_flight" state to prevent double dispatch on race conditions)

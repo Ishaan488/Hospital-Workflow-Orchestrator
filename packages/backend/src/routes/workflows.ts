@@ -94,4 +94,49 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// POST /api/workflows/:id/stop — mark a workflow as failed/stopped
+router.post('/:id/stop', async (req, res) => {
+  try {
+    const workflowId = req.params.id;
+
+    await db
+      .update(workflows)
+      .set({ 
+        status: 'failed',
+        updatedAt: new Date()
+      })
+      .where(eq(workflows.id, workflowId));
+
+    // Log the termination action
+    await db.insert(auditLogs).values({
+      workflowId,
+      agent: 'System',
+      action: 'Workflow terminated by user',
+      details: { reason: 'User requested stop', timestamp: new Date().toISOString() },
+    });
+
+    res.json({ success: true, message: 'Workflow stopped' });
+  } catch (error) {
+    console.error('Error stopping workflow:', error);
+    res.status(500).json({ error: 'Failed to stop workflow' });
+  }
+});
+
+// DELETE /api/workflows/:id — delete a workflow and all its data
+router.delete('/:id', async (req, res) => {
+  try {
+    const workflowId = req.params.id;
+
+    // Manual cascade delete (ensures cleanup even if FKs aren't cascading in SQL)
+    await db.delete(auditLogs).where(eq(auditLogs.workflowId, workflowId));
+    await db.delete(workflowTasks).where(eq(workflowTasks.workflowId, workflowId));
+    await db.delete(workflows).where(eq(workflows.id, workflowId));
+
+    res.json({ success: true, message: 'Workflow deleted' });
+  } catch (error) {
+    console.error('Error deleting workflow:', error);
+    res.status(500).json({ error: 'Failed to delete workflow' });
+  }
+});
+
 export default router;

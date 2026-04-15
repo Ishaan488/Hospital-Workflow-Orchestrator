@@ -1,5 +1,5 @@
 import { db, pool } from './connection';
-import { patients, doctors, appointments } from './schema';
+import { patients, doctors, appointments, workflows, workflowTasks, auditLogs } from './schema';
 import type { PatientDocument, PatientDemographics, DoctorSchedule } from './schema';
 import dotenv from 'dotenv';
 
@@ -11,6 +11,10 @@ async function seed() {
   try {
     // --- Clear existing data (order matters for FK constraints) ---
     console.log('🗑️  Clearing existing data...');
+    // Delete leaf nodes first
+    await db.delete(auditLogs);
+    await db.delete(workflowTasks);
+    await db.delete(workflows);
     await db.delete(appointments);
     await db.delete(patients);
     await db.delete(doctors);
@@ -159,7 +163,7 @@ async function seed() {
         dob: '1999-04-30',
         phone: '+91-8877665544',
         email: 'sneha.gupta@email.com',
-        insuranceId: 'INS-2024-EXPIRED',
+        insuranceId: 'INS-2024-004',
         insuranceProvider: 'Bajaj Allianz Health',
         documents: [
           { type: 'insurance_card', name: 'Bajaj Allianz Card', uploadedAt: '2024-06-15', verified: true },

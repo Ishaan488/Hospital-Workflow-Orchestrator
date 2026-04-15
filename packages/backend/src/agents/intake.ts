@@ -79,63 +79,58 @@ export class IntakeAgent extends BaseAgent {
    */
   private async processIntakeCompleteness(task: A2ATask, patientId: string, appointmentType: string): Promise<void> {
     // 1. Check document completeness via EHR MCP
+    // MCP Tool: check_document_completeness(patient_id, appointment_type)
+    // MCP Response: { isComplete: boolean, missingDocuments: string[], patientName: string, ... }
     const docsResult = await this.callMCPTool('ehr', 'check_document_completeness', {
       patient_id: patientId,
-      appointment_type: appointmentType
-    });
+      appointment_type: appointmentType,
+    }, task.workflowId);
 
     if (docsResult.error) {
-      await this.sendStatusUpdate(task.id, 'failed', docsResult.message);
+      await this.sendStatusUpdate(task.id, 'failed', docsResult.message || 'Document check failed.');
       return;
     }
 
-    // 2. Extract context
-    const isComplete = docsResult.complete === true;
-    const missingDocs = docsResult.missingDocuments || [];
+    // 2. Extract context — MCP returns 'isComplete', NOT 'complete'
+    const isComplete = docsResult.isComplete === true;
+    const missingDocs: string[] = docsResult.missingDocuments || [];
     
     await this.logAudit(task.workflowId, `Document check finished. Complete: ${isComplete}`, { missingDocs });
 
-    // 3. Conditional A2A Routing Routing
+    // 3. Conditional outcome — Orchestrator's coordinator will read these flags
+    //    and decide what runs next. Agents do NOT chain to peers directly.
     if (!isComplete) {
-      // DIVERGENCE: We need to inform the patient they are missing documents
-      await this.sendStatusUpdate(task.id, 'working', 'Documents missing. Contacting Communication Agent.');
-      
+      await this.sendStatusUpdate(task.id, 'working', `Documents missing: ${missingDocs.join(', ')}. Notifying patient.`);
+
+      // Inform patient of missing documents via CommunicationAgent
+      // NOTE: This is the ONE exception — CommunicationAgent is a leaf node (side-effect only),
+      // so IntakeAgent can trigger a notification directly without causing coordination loops.
       const emailTaskPayload = {
         action: 'send_patient_reminder',
         patient_id: patientId,
-        message: `Hello ${docsResult.patientName}. You are missing required documents: ${missingDocs.join(', ')}. Please upload them before your visit.`
+        message: `Hello ${docsResult.patientName || 'Patient'}. You are missing required documents for your upcoming appointment: ${missingDocs.join(', ')}. Please upload them at your earliest convenience.`,
       };
-
       await this.sendA2ATask('CommunicationAgent', emailTaskPayload, task.workflowId);
-      
-      // Conclude the intake task as blocked
-      const report = {
+
+      // Signal the Orchestrator: intake is blocked
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'blocked',
         reason: 'missing_documents',
-        details: missingDocs
-      };
-
-      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify(report));
-      
-      // Normally we'd reply to the orchestrator, but the framework lets the Orchestrator listen to the TaskStatusUpdate.
-    } else {
-      // PROCEED: Documents are complete!
-      await this.sendStatusUpdate(task.id, 'working', 'Documents complete. Passing to Insurance verification.');
-
-      const insurancePayload = {
-        action: 'check_eligibility',
+        docs_complete: false,
+        missing: missingDocs,
         patient_id: patientId,
-        procedure_code: appointmentType // mapping type to pseudo-code for POC
-      };
+      }));
 
-      await this.sendA2ATask('InsuranceAgent', insurancePayload, task.workflowId);
-
-      const report = {
+    } else {
+      // All documents present — report clean completion to the Orchestrator.
+      // The Orchestrator's coordinator will schedule InsuranceAgent next based on this flag.
+      // Do NOT call sendA2ATask('InsuranceAgent') here — that causes double execution.
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'cleared_for_insurance',
-        details: 'All required demographic and clinical documents present.'
-      };
-
-      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify(report));
+        docs_complete: true,
+        patient_id: patientId,
+        details: 'All required documents are uploaded and verified.',
+      }));
     }
   }
 }

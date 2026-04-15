@@ -13,20 +13,20 @@ export class WorkflowEngine {
   /**
    * Initializes a brand new workflow instance based on an external pulse/event.
    */
-  public async createWorkflow(type: string, triggerEvent: string, patientId: string): Promise<string> {
+  public async createWorkflow(type: string, triggerEvent: Record<string, any>, patientId?: string): Promise<string> {
     const workflowId = randomUUID();
     
     await db.insert(workflows).values({
       id: workflowId,
       type,
       status: 'created',
-      patientId,
+      patientId: patientId ?? null,
       context: { trigger: triggerEvent },
       createdAt: new Date(),
       updatedAt: new Date(),
     });
 
-    await stateMachine.transition(workflowId, 'planning', `Workflow initialized by event: ${triggerEvent}`);
+    await stateMachine.transition(workflowId, 'planning', `Workflow initialized by event: ${type}`);
     return workflowId;
   }
 

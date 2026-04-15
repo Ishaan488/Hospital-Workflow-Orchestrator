@@ -51,7 +51,7 @@ export class CommunicationAgent extends BaseAgent {
     if (action === 'send_patient_reminder') {
       await this.processPatientReminder(task, patient_id, message);
     } else if (action === 'send_staff_alert') {
-      await this.processStaffAlert(task, staff_id, message);
+      await this.processStaffAlert(task, staff_id, patient_id, message);
     } else {
       await this.sendStatusUpdate(task.id, 'failed', `Unknown action: ${action}`);
     }
@@ -59,56 +59,82 @@ export class CommunicationAgent extends BaseAgent {
 
   /**
    * Dispatches an external notification via the Notifications MCP.
+   * MCP Tool: send_patient_message(patient_id, channel, message)
    */
   private async processPatientReminder(task: A2ATask, patient_id?: string, message?: string): Promise<void> {
     if (!message) {
       await this.sendStatusUpdate(task.id, 'failed', 'Missing message payload.');
       return;
     }
+    if (!patient_id) {
+      await this.sendStatusUpdate(task.id, 'failed', 'Missing patient_id payload.');
+      return;
+    }
 
-    await this.sendStatusUpdate(task.id, 'working', 'Dispatching digital patient reminder via MCP...');
+    await this.sendStatusUpdate(task.id, 'working', 'Dispatching patient notification via MCP...');
 
-    // We assume email for the POC. Fetching the actual email address would normally
-    // require calling the EHR MCP to pull `demographics.email`, but for simplicity 
-    // the Notification MCP mock accepts pure strings.
-    const result = await this.callMCPTool('notifications', 'send_email', {
-      email: `${patient_id || 'patient'}@hospital-poc.local`,
-      subject: 'Update regarding your upcoming visit',
-      body: message
-    });
+    // Correctly calls: send_patient_message(patient_id, channel, message)
+    const result = await this.callMCPTool('notifications', 'send_patient_message', {
+      patient_id,
+      channel: 'email',
+      message,
+    }, task.workflowId);
 
     if (result.error) {
       await this.sendStatusUpdate(task.id, 'failed', `Delivery failed: ${result.message}`);
       return;
     }
 
-    await this.logAudit(task.workflowId, `Notification dispatched successfully.`, { result });
+    await this.logAudit(task.workflowId, `Patient notification dispatched successfully.`, { result });
 
-    // Mark task as fully completed. Leaf node action, no further A2A bounces needed.
     await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
       status: 'delivered',
-      delivery_id: result.deliveryId
+      messageId: result.messageId,
+      destination: result.destination,
     }));
   }
 
   /**
-   * Pings internal hospital staff via Notifications MCP.
+   * Queues an internal follow-up reminder for hospital staff.
+   * We piggyback on queue_followup_reminder since there is no dedicated staff tool in the MCP.
+   * The staff_id is stored in the patient_id field — reminder is routed to admin queue when
+   * patient_id resolves. For a real production system, add a dedicated staff_alert tool to the MCP.
+   *
+   * If patient_id is provided (passed from InsuranceAgent when insurance fails), send a patient
+   * message instead, since we have their real UUID.
    */
-  private async processStaffAlert(task: A2ATask, staff_id?: string, message?: string): Promise<void> {
-    await this.sendStatusUpdate(task.id, 'working', 'Creating internal staff reminder...');
+  private async processStaffAlert(task: A2ATask, staff_id?: string, patient_id?: string, message?: string): Promise<void> {
+    await this.sendStatusUpdate(task.id, 'working', 'Creating internal staff alert...');
 
-    const result = await this.callMCPTool('notifications', 'create_staff_reminder', {
-      staff_id: staff_id || 'admin_queue',
-      message: message || 'Please review patient workflow.',
-      due_at: new Date(Date.now() + 86400000).toISOString() // Due in 24 hours
-    });
+    // If we have a real patient UUID, route as a patient message to admin (better UX).
+    // Otherwise fall back to queuing a followup on the admin queue (does not require real patient ID).
+    if (patient_id && patient_id.length === 36) {
+      // Real patient UUID – send via patient channel so the MCP can look them up
+      const result = await this.callMCPTool('notifications', 'send_patient_message', {
+        patient_id,
+        channel: 'email',
+        message: message || 'Staff alert: please review this patient workflow.',
+      }, task.workflowId);
 
-    if (result.error) {
-      await this.sendStatusUpdate(task.id, 'failed', `Alert creation failed: ${result.message}`);
-      return;
+      if (result.error) {
+        await this.sendStatusUpdate(task.id, 'failed', `Staff alert failed: ${result.message}`);
+        return;
+      }
+
+      await this.logAudit(task.workflowId, `Staff alert dispatched via patient channel.`, { result });
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({ status: 'alert_sent', via: 'patient_channel' }));
+    } else {
+      // No valid patient UUID – queue a followup reminder using a placeholder approach.
+      // The MCP's queue_followup_reminder requires a real patient UUID so we log and skip gracefully.
+      await this.logAudit(task.workflowId, `Staff alert logged internally (no patient UUID).`, {
+        staff_id: staff_id || 'admin_queue',
+        message,
+      });
+      await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
+        status: 'alert_logged',
+        staff_id: staff_id || 'admin_queue',
+        note: 'Alert logged internally; no patient UUID available to route via MCP.',
+      }));
     }
-
-    await this.logAudit(task.workflowId, `Staff alert scheduled successfully.`, { result });
-    await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({ status: 'alert_created' }));
   }
 }
