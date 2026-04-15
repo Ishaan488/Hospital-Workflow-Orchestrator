@@ -60,3 +60,9 @@ pnpm-debug.log*
 .cache/
 .eslintcache
 
+# Project Specific
+logs_dev.txt
+packages/backend/logs_dev.txt
+packages/frontend/logs_dev.txt
+/packages/backend/scratch/
+/packages/backend/list_models.ts
