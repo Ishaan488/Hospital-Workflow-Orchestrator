@@ -6,7 +6,6 @@ interface WorkflowRow {
   id: string;
   type: string;
   status: string;
-  patientId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -15,18 +14,14 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string }> = {
   created:          { label: 'Created',          badge: 'badge-muted' },
   planning:         { label: 'Planning',          badge: 'badge-violet' },
   in_progress:      { label: 'In Progress',       badge: 'badge-blue' },
-  waiting_approval: { label: 'Awaiting Approval', badge: 'badge-amber' },
-  waiting_patient:  { label: 'Waiting Patient',   badge: 'badge-amber' },
   waiting_external: { label: 'Waiting External',  badge: 'badge-muted' },
   completed:        { label: 'Completed',         badge: 'badge-green' },
   failed:           { label: 'Failed',            badge: 'badge-red' },
-  escalated:        { label: 'Escalated',         badge: 'badge-red' },
 };
 
 const STATUS_DOTS: Record<string, string> = {
   in_progress:      'var(--c-cobalt)',
   planning:         'var(--c-violet)',
-  waiting_approval: 'var(--c-amber)',
   completed:        'var(--c-emerald)',
   failed:           'var(--c-crimson)',
 };
@@ -68,7 +63,6 @@ export default function WorkflowsPage() {
   const filtered = filter === 'all' ? workflows
     : workflows.filter(w => {
         if (filter === 'active')    return ['in_progress', 'planning', 'created'].includes(w.status);
-        if (filter === 'approval')  return w.status === 'waiting_approval';
         if (filter === 'completed') return w.status === 'completed';
         return true;
       });
@@ -76,7 +70,6 @@ export default function WorkflowsPage() {
   const FILTERS = [
     { key: 'all',       label: 'All',            count: workflows.length },
     { key: 'active',    label: 'Active',          count: workflows.filter(w => ['in_progress', 'planning', 'created'].includes(w.status)).length },
-    { key: 'approval',  label: 'Needs Approval',  count: workflows.filter(w => w.status === 'waiting_approval').length },
     { key: 'completed', label: 'Completed',        count: workflows.filter(w => w.status === 'completed').length },
   ];
 
@@ -141,7 +134,6 @@ export default function WorkflowsPage() {
             <span style={{ width: 12 }}></span>
             <span style={{ flex: 1 }}>Type / ID</span>
             <span style={{ width: 150 }}>Status</span>
-            <span style={{ width: 140 }}>Patient</span>
             <span style={{ width: 140 }}>Updated</span>
             <span style={{ width: 60 }}></span>
           </div>
@@ -178,9 +170,6 @@ export default function WorkflowsPage() {
                   </p>
                 </div>
                 <span className={`badge ${s.badge}`} style={{ width: 150, flexShrink: 0 }}>{s.label}</span>
-                <p style={{ width: 140, fontSize: 'var(--t-12)', color: 'var(--c-ink-muted)', flexShrink: 0 }}>
-                  {wf.patientId ? `${wf.patientId.slice(0, 8)}…` : '—'}
-                </p>
                 <p style={{ width: 140, fontSize: 'var(--t-12)', color: 'var(--c-ink-muted)', flexShrink: 0 }}>
                   {new Date(wf.updatedAt).toLocaleString()}
                 </p>

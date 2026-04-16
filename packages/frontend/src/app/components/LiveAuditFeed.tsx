@@ -17,11 +17,15 @@ interface LiveAuditFeedProps {
 
 function getAgentColor(agent: string): string {
   const a = agent.toLowerCase();
-  if (a.includes('orchestrator'))  return '#5c00d3';
-  if (a.includes('intake'))        return '#0047e1';
-  if (a.includes('insurance'))     return '#0e7490';
-  if (a.includes('scheduling'))    return '#006e3a';
-  if (a.includes('communication')) return '#b55900';
+  if (a.includes('orchestrator'))          return '#5c00d3';
+  if (a.includes('incident'))              return '#0047e1';
+  if (a.includes('triage'))               return '#0e7490';
+  if (a.includes('hospitalmatching') || a.includes('hospital')) return '#006e3a';
+  if (a.includes('dispatch'))              return '#b55900';
+  if (a.includes('contact'))              return '#be185d';
+  if (a.includes('guidance'))             return '#a855f7';
+  if (a.includes('handover'))             return '#f97316';
+  if (a.includes('audit'))               return '#64748b';
   if (a.includes('broker') || a.includes('a2a')) return '#be185d';
   return '#888680';
 }
@@ -70,7 +74,13 @@ export default function LiveAuditFeed({ workflowId, initialLogs = [] }: LiveAudi
       }
     };
 
-    es.addEventListener('audit_log',     e => addEntry(JSON.parse(e.data)));
+    es.addEventListener('audit_log', e => {
+      const d = JSON.parse(e.data);
+      // Ignore inner types that have dedicated listeners to prevent UI duplication
+      if (d.details?.type === 'mcp_call' || d.details?.type === 'agent_reasoning') return;
+      addEntry(d);
+    });
+    
     es.addEventListener('a2a_message',   e => {
       const d = JSON.parse(e.data);
       addEntry({ ...d, agent: 'A2ABroker', action: `A2A: ${d.from} → ${d.to}`, details: d });
@@ -86,10 +96,6 @@ export default function LiveAuditFeed({ workflowId, initialLogs = [] }: LiveAudi
     es.addEventListener('agent_escalation', e => {
       const d = JSON.parse(e.data);
       addEntry({ ...d, action: `ESCALATION: ${d.agent} — ${d.reason}` });
-    });
-    es.addEventListener('approval_requested', e => {
-      const d = JSON.parse(e.data);
-      addEntry({ agent: 'ApprovalManager', action: `Approval Required: ${d.action}`, details: d });
     });
 
     return () => es.close();

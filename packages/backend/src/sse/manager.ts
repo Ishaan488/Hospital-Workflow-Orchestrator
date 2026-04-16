@@ -63,13 +63,17 @@ class SSEManager {
   }
 
   /**
-   * Broadcast an event to ALL connected clients (for dashboard-level updates).
+   * Broadcast an event to ALL connected clients (for dashboard-level updates when there is no workflow ID).
    */
   public broadcastGlobal(eventType: SSEEventType, data: Record<string, any>): void {
     const payload = { ...data, timestamp: new Date().toISOString() };
 
     for (const client of this.clients.values()) {
-      this.writeEvent(client.res, eventType, payload);
+      // If the event has a workflowId, it should be broadcast via broadcast(workflowId) instead.
+      // This strict check prevents duplicate events on strictly scoped workflow UI feeds.
+      if (client.workflowId === 'global') {
+        this.writeEvent(client.res, eventType, payload);
+      }
     }
   }
 

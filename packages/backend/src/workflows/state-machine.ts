@@ -8,9 +8,7 @@ export type WorkflowState =
   | 'created' 
   | 'planning' 
   | 'in_progress' 
-  | 'waiting_approval' 
-  | 'waiting_patient' 
-  | 'waiting_external' 
+  | 'waiting_external'  // e.g. ambulance in transit
   | 'completed' 
   | 'failed' 
   | 'escalated';
@@ -18,9 +16,7 @@ export type WorkflowState =
 const VALID_TRANSITIONS: Record<WorkflowState, WorkflowState[]> = {
   created: ['planning'],
   planning: ['in_progress', 'failed'],
-  in_progress: ['completed', 'waiting_approval', 'waiting_patient', 'waiting_external', 'failed', 'escalated'],
-  waiting_approval: ['in_progress', 'escalated'],
-  waiting_patient: ['in_progress', 'escalated'],
+  in_progress: ['completed', 'waiting_external', 'failed', 'escalated'],
   waiting_external: ['in_progress', 'escalated'],
   completed: [], // Terminal
   failed: [],    // Terminal

@@ -5,8 +5,15 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1776191308596,
-      "tag": "0000_numerous_eternity",
+      "when": 1776357873846,
+      "tag": "0000_open_puppet_master",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776360095513,
+      "tag": "0001_lying_synch",
       "breakpoints": true
     }
   ]

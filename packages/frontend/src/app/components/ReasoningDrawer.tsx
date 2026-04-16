@@ -19,11 +19,15 @@ interface ReasoningDrawerProps {
 
 function getAgentColor(agent: string): string {
   const a = agent.toLowerCase();
-  if (a.includes('orchestrator')) return '#5c00d3';
-  if (a.includes('intake'))       return '#0047e1';
-  if (a.includes('insurance'))    return '#0e7490';
-  if (a.includes('scheduling'))   return '#006e3a';
-  if (a.includes('communication'))return '#b55900';
+  if (a.includes('orchestrator'))             return '#5c00d3';
+  if (a.includes('incident'))                 return '#0047e1';
+  if (a.includes('triage'))                   return '#0e7490';
+  if (a.includes('hospitalmatching') || a.includes('hospital')) return '#006e3a';
+  if (a.includes('dispatch'))                 return '#b55900';
+  if (a.includes('contact'))                  return '#be185d';
+  if (a.includes('guidance'))                 return '#a855f7';
+  if (a.includes('handover'))                 return '#f97316';
+  if (a.includes('audit'))                    return '#64748b';
   return '#888680';
 }
 

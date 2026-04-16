@@ -7,7 +7,6 @@ interface WorkflowRow {
   id: string;
   type: string;
   status: string;
-  patientId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,8 +22,6 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string }> = {
   created:          { label: 'Created',          badge: 'badge-muted' },
   planning:         { label: 'Planning',          badge: 'badge-violet' },
   in_progress:      { label: 'In Progress',       badge: 'badge-blue' },
-  waiting_approval: { label: 'Awaiting Approval', badge: 'badge-amber' },
-  waiting_patient:  { label: 'Waiting Patient',   badge: 'badge-amber' },
   waiting_external: { label: 'Waiting External',  badge: 'badge-muted' },
   completed:        { label: 'Completed',         badge: 'badge-green' },
   failed:           { label: 'Failed',            badge: 'badge-red' },
@@ -32,13 +29,17 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string }> = {
 };
 
 const AGENT_COLORS: Record<string, string> = {
-  orchestrator:  'var(--c-violet)',
-  intake:        'var(--c-cobalt)',
-  insurance:     '#0e7490',
-  scheduling:    'var(--c-emerald)',
-  communication: 'var(--c-amber)',
-  a2a:           '#be185d',
-  broker:        '#be185d',
+  orchestrator:     'var(--c-violet)',
+  incident:         'var(--c-cobalt)',
+  triage:           '#0e7490',
+  hospitalmatching: 'var(--c-emerald)',
+  dispatch:         'var(--c-amber)',
+  contact:          'var(--c-crimson)',
+  guidance:         'var(--c-teal)',
+  handover:         'var(--c-blue)',
+  audit:            'var(--c-slate)',
+  a2a:              '#be185d',
+  broker:           '#be185d',
 };
 function agentColor(name: string) {
   const n = name.toLowerCase();
@@ -50,7 +51,7 @@ function agentColor(name: string) {
 
 export default function Dashboard() {
   const [workflows, setWorkflows] = useState<WorkflowRow[]>([]);
-  const [stats, setStats] = useState({ active: 0, pending: 0, completed: 0, total: 0 });
+  const [stats, setStats] = useState({ active: 0, completed: 0, total: 0 });
   const [liveEvents, setLiveEvents] = useState<LiveEvent[]>([]);
   const [triggeredWorkflow, setTriggeredWorkflow] = useState<string | null>(null);
 
@@ -63,7 +64,6 @@ export default function Dashboard() {
         setStats({
           total:     d.length,
           active:    d.filter(w => ['in_progress', 'planning', 'created'].includes(w.status)).length,
-          pending:   d.filter(w => w.status === 'waiting_approval').length,
           completed: d.filter(w => w.status === 'completed').length,
         });
       }).catch(() => {});
@@ -92,7 +92,6 @@ export default function Dashboard() {
         setStats({
           total: d.length,
           active: d.filter(w => ['in_progress', 'planning', 'created'].includes(w.status)).length,
-          pending: d.filter(w => w.status === 'waiting_approval').length,
           completed: d.filter(w => w.status === 'completed').length,
         });
       }).catch(() => {});
@@ -132,11 +131,10 @@ export default function Dashboard() {
       )}
 
       {/* Stats strip — large typography, no cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0, borderTop: '3px solid var(--c-border)', borderLeft: '3px solid var(--c-border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 0, borderTop: '3px solid var(--c-border)', borderLeft: '3px solid var(--c-border)' }}>
         {[
           { v: stats.total,     label: 'Total',     color: 'var(--c-ink)' },
           { v: stats.active,    label: 'Active',    color: 'var(--c-cobalt)' },
-          { v: stats.pending,   label: 'Pending',   color: 'var(--c-amber)' },
           { v: stats.completed, label: 'Completed', color: 'var(--c-emerald)' },
         ].map(({ v, label, color }) => (
           <div key={label} style={{

@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { randomUUID } from 'crypto';
-import { patientRoutes, appointmentRoutes, workflowRoutes, approvalRoutes } from './routes';
+import { workflowRoutes } from './routes';
 import mcpDebugRoutes from './routes/mcp-debug';
 import { initializeMCPServers } from './mcp/init';
 
@@ -10,17 +10,22 @@ import { initializeMCPServers } from './mcp/init';
 import { eventRouter } from './workflows/events';
 import { a2aRouter } from './a2a/broker';
 import { auditRouter } from './audit/logger';
-import { approvalRouter } from './approval/manager';
 import { demoRouter } from './routes/demo';
 
 // --- SSE Manager ---
 import { sseManager } from './sse/manager';
 
 // --- Agents ---
-import { IntakeAgent } from './agents/intake';
-import { InsuranceAgent } from './agents/insurance';
-import { SchedulingAgent } from './agents/scheduling';
-import { CommunicationAgent } from './agents/communication';
+import {
+  IncidentAgent,
+  TriageAgent,
+  HospitalMatchingAgent,
+  DispatchAgent,
+  ContactAgent,
+  GuidanceAgent,
+  HandoverAgent,
+  AuditAgent
+} from './agents/emergency';
 import { orchestratorAgent } from './agents/orchestrator';
 
 dotenv.config();
@@ -54,10 +59,7 @@ app.get('/api', (_req, res) => {
     version: '0.1.0',
     endpoints: {
       health: 'GET /health',
-      patients: 'GET /api/patients',
-      appointments: 'GET /api/appointments',
       workflows: 'GET /api/workflows',
-      approvals: 'GET /api/approvals',
       events: 'POST /api/events',
       demo: 'POST /api/demo/trigger',
       stream: 'GET /api/workflows/:id/stream',
@@ -89,8 +91,6 @@ app.get('/api/stream/global', (req, res) => {
 });
 
 // --- Routes ---
-app.use('/api/patients', patientRoutes);
-app.use('/api/appointments', appointmentRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/mcp', mcpDebugRoutes);
 
@@ -98,7 +98,6 @@ app.use('/api/mcp', mcpDebugRoutes);
 app.use(eventRouter);
 app.use(a2aRouter);
 app.use(auditRouter);
-app.use(approvalRouter);
 app.use(demoRouter);
 
 // --- Start Server ---
@@ -108,10 +107,14 @@ async function start() {
 
   // Boot up the A2A Event Workers so they subscribe to the broker queues
   console.log('--- Starting A2A Agent Services ---');
-  new IntakeAgent().start();
-  new InsuranceAgent().start();
-  new SchedulingAgent().start();
-  new CommunicationAgent().start();
+  new IncidentAgent().start();
+  new TriageAgent().start();
+  new HospitalMatchingAgent().start();
+  new DispatchAgent().start();
+  new ContactAgent().start();
+  new GuidanceAgent().start();
+  new HandoverAgent().start();
+  new AuditAgent().start();
   orchestratorAgent.start();
   console.log('--- A2A Agents Online ---\n');
 

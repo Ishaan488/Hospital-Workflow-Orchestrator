@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { db } from '../db/connection';
-import { patients, appointments, doctors } from '../db/schema';
 import { orchestratorAgent } from '../agents/orchestrator';
+import { db } from '../db/connection';
+import { incidents } from '../db/schema';
 
 export const demoRouter = Router();
 
@@ -11,38 +11,29 @@ export const demoRouter = Router();
  * Maps a scenario number to a named patient situation.
  * These use the seeded patient IDs from seed.ts.
  */
+/**
+ * Demo Scenario Definitions
+ * Maps a scenario number to an emergency situation.
+ */
 const DEMO_SCENARIOS = {
   1: {
-    name: 'Happy Path',
-    description: 'Patient with complete documents + valid insurance → workflow completes automatically',
-    patientSeedIndex: 0,
+    name: 'Normal Flow',
+    description: 'Full Internet Connectivity',
   },
   2: {
-    name: 'Missing Insurance Card',
-    description: 'Insurance card missing → Intake detects, Communication sends reminder, slot marked provisional',
-    patientSeedIndex: 1,
+    name: 'Mesh Relay',
+    description: 'Internet Saturated',
   },
   3: {
-    name: 'Pre-Auth Required',
-    description: 'Procedure needs pre-authorization → Insurance Agent submits, monitors for delay risk',
-    patientSeedIndex: 2,
-  },
-  4: {
-    name: 'Reschedule Needed',
-    description: 'High delay risk → Scheduling Agent proposes alternatives → Human approval gate triggered',
-    patientSeedIndex: 3,
-  },
-  5: {
-    name: 'Multiple Missing Items',
-    description: 'Missing ID + missing referral + incomplete demographics → parallel agent coordination',
-    patientSeedIndex: 4,
+    name: 'Replanning',
+    description: 'Condition worsens',
   },
 };
 
 /**
  * POST /api/demo/trigger
- * Body: { scenario: 1|2|3|4|5 }
- * Triggers a demo workflow for the selected scenario using seeded patient data.
+ * Body: { scenario: 1|2|3 }
+ * Triggers a demo emergency workflow for the selected scenario.
  */
 demoRouter.post('/api/demo/trigger', async (req, res) => {
   try {
@@ -51,7 +42,7 @@ demoRouter.post('/api/demo/trigger', async (req, res) => {
 
     if (!scenarioNum || !DEMO_SCENARIOS[scenarioNum as keyof typeof DEMO_SCENARIOS]) {
       res.status(400).json({
-        error: 'Invalid scenario. Must be 1-5.',
+        error: 'Invalid scenario. Must be 1-3.',
         available: Object.entries(DEMO_SCENARIOS).map(([k, v]) => ({ id: k, name: v.name, description: v.description }))
       });
       return;
@@ -59,34 +50,23 @@ demoRouter.post('/api/demo/trigger', async (req, res) => {
 
     const scenarioDef = DEMO_SCENARIOS[scenarioNum as keyof typeof DEMO_SCENARIOS];
 
-    // Fetch a real seeded patient for this scenario
-    const allPatients = await db.select().from(patients).limit(10);
-    const allDoctors = await db.select().from(doctors).limit(5);
+    // Create a synthetic incident ID
+    const syntheticIncidentId = randomUUID();
 
-    if (allPatients.length === 0 || allDoctors.length === 0) {
-      res.status(503).json({ error: 'No seed data found. Run: npm run db:seed first.' });
-      return;
-    }
-
-    // Pick patient by scenario index (falls back gracefully)
-    const patient = allPatients[scenarioDef.patientSeedIndex % allPatients.length];
-    const doctor = allDoctors[scenarioNum % allDoctors.length];
-
-    // Create a synthetic appointment triggerEvent
-    const syntheticAppointmentId = randomUUID();
-    const slotTime = new Date();
-    slotTime.setDate(slotTime.getDate() + 7); // 7 days from now
+    // Persist to the database so that workflow relationships (foreign keys) are valid
+    await db.insert(incidents).values({
+      id: syntheticIncidentId,
+      triggerType: scenarioNum === 2 ? 'mesh_relay_triggered' : 'emergency_incident',
+      location: { lat: 37.7749, lon: -122.4194, accuracy_m: 5, source: 'gps' },
+      connectivity: { internet: scenarioNum !== 2, sms: true, battery: 85 },
+      voiceText: 'I need help, severe chest pain',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
     const triggerEvent = {
-      type: scenarioNum === 2 ? 'document_uploaded' : 
-            scenarioNum === 3 || scenarioNum === 4 ? 'preauth_status_changed' : 
-            'appointment_booked',
-      appointmentId: syntheticAppointmentId,
-      patientId: patient.id,
-      doctorId: doctor.id,
-      department: doctor.department,
-      slotTime: slotTime.toISOString(),
-      appointmentType: scenarioNum === 3 ? 'specialist_procedure' : 'general',
+      type: scenarioNum === 2 ? 'mesh_relay_triggered' : 'emergency_incident',
+      incident_id: syntheticIncidentId,
       demoScenario: scenarioNum,
       demoScenarioName: scenarioDef.name,
     };
@@ -100,7 +80,6 @@ demoRouter.post('/api/demo/trigger', async (req, res) => {
       scenarioName: scenarioDef.name,
       description: scenarioDef.description,
       workflowId,
-      patient: { id: patient.id, name: patient.name },
       streamUrl: `/api/workflows/${workflowId}/stream`,
       detailUrl: `/workflows/${workflowId}`,
     });

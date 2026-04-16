@@ -11,6 +11,9 @@ import { a2aBroker } from '../a2a/broker';
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export class OrchestratorAgent extends BaseAgent {
+  // Concurrency lock to prevent multiple identical Gemini evaluations from firing simultaneously
+  private evaluationLocks: Map<string, boolean> = new Map();
+
   constructor() {
     super(
       'OrchestratorAgent',
@@ -28,11 +31,11 @@ export class OrchestratorAgent extends BaseAgent {
    * Returns the new workflow ID.
    */
   public async startWorkflow(triggerEvent: Record<string, any>): Promise<string> {
-    const workflowType = triggerEvent.type ?? 'pre_visit_intake';
-    const patientId = triggerEvent.patientId;
+    const workflowType = triggerEvent.type ?? 'emergency_incident';
+    const incidentId = triggerEvent.incident_id;
 
     // Create the persisteed workflow row
-    const workflowId = await workflowEngine.createWorkflow(workflowType, triggerEvent, patientId);
+    const workflowId = await workflowEngine.createWorkflow(workflowType, triggerEvent, incidentId);
 
     await this.logAudit(workflowId, `Workflow created via trigger: ${workflowType}`, { triggerEvent });
 
@@ -127,13 +130,21 @@ export class OrchestratorAgent extends BaseAgent {
     // 2. Dispatch anything that is newly unblocked
     const dispatchedCount = await this.dispatchReadyTasks(workflowId);
     
-    if (dispatchedCount === 0) {
-      // The graph is stalled (all pending tasks have unmet dependencies, or everything is complete)
-      // Check if everything is complete
-      const currentState = await stateMachine.getCurrentState(workflowId);
-      await this.logAudit(workflowId, 'Sub-task graph exhausted. Re-evaluating overall workflow state with Gemini.', { currentState, lastOutput: output });
+    // Check if other tasks are still running
+    const hasRunning = await workflowEngine.hasRunningTasks(workflowId);
+
+    if (dispatchedCount === 0 && !hasRunning) {
+      if (this.evaluationLocks.get(workflowId)) {
+        return; // Already evaluating
+      }
+      this.evaluationLocks.set(workflowId, true);
 
       try {
+        // The graph is completely exhausted (all paths terminated)
+        // Check if everything is complete
+        const currentState = await stateMachine.getCurrentState(workflowId);
+        await this.logAudit(workflowId, 'Sub-task graph exhausted. Re-evaluating overall workflow state with Gemini.', { currentState, lastOutput: output });
+
         const response = await ai.models.generateContent({
           model: 'gemini-flash-latest',
           contents: [SYSTEM_PROMPT + "\n\n" + COORDINATOR_PROMPT_TEMPLATE(currentState || {}, output)],
@@ -166,6 +177,8 @@ export class OrchestratorAgent extends BaseAgent {
       } catch (err: any) {
          await this.logAudit(workflowId, 'Gemini Coordinator Evaluation Failed', { error: err?.message || String(err) });
          await stateMachine.transition(workflowId, 'failed', `Evaluation failed: ${err?.message || 'Invalid LLM response'}`);
+      } finally {
+         this.evaluationLocks.delete(workflowId);
       }
     }
   }
@@ -177,6 +190,9 @@ export class OrchestratorAgent extends BaseAgent {
     const readyTasks = await workflowEngine.getReadyTasks(workflowId);
     
     for (const task of readyTasks) {
+      // Mark as dispatched immediately to prevent duplicate reads on next cycle
+      await workflowEngine.markTaskDispatched(task.id);
+
       // We wrap the DB task in our physical A2A Task wrapper payload
       const a2aPayload = {
         action: task.type,

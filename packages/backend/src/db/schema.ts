@@ -7,6 +7,7 @@ import {
   jsonb,
   pgEnum,
   integer,
+  boolean,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
@@ -16,95 +17,91 @@ export const workflowStatusEnum = pgEnum('workflow_status', [
   'created',
   'planning',
   'in_progress',
-  'waiting_approval',
-  'waiting_patient',
   'waiting_external',
   'completed',
   'failed',
   'escalated',
 ]);
 
+export const incidentStatusEnum = pgEnum('incident_status', [
+  'active',
+  'resolved',
+  'false_alarm'
+]);
+
 export const taskStatusEnum = pgEnum('task_status', [
   'pending',
   'assigned',
   'in_progress',
-  'waiting_approval',
   'completed',
   'failed',
   'skipped',
 ]);
 
-export const approvalStatusEnum = pgEnum('approval_status', [
-  'pending',
-  'approved',
-  'rejected',
-]);
+// ─── Users (Victims) ─────────────────────────────────────
 
-export const appointmentStatusEnum = pgEnum('appointment_status', [
-  'booked',
-  'provisional',
-  'confirmed',
-  'rescheduled',
-  'cancelled',
-  'completed',
-  'no_show',
-]);
-
-// ─── Patients ────────────────────────────────────────────
-
-export const patients = pgTable('patients', {
+export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
   dob: varchar('dob', { length: 10 }).notNull(), // YYYY-MM-DD
   phone: varchar('phone', { length: 20 }).notNull(),
-  email: varchar('email', { length: 255 }),
-  insuranceId: varchar('insurance_id', { length: 100 }),
-  insuranceProvider: varchar('insurance_provider', { length: 255 }),
-  documents: jsonb('documents').$type<PatientDocument[]>().default([]),
-  demographics: jsonb('demographics').$type<PatientDemographics>().default({}),
+  bloodGroup: varchar('blood_group', { length: 5 }),
+  allergies: jsonb('allergies').$type<string[]>().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 
-// ─── Doctors ─────────────────────────────────────────────
+// ─── Emergency Orchestration ─────────────────────────────
 
-export const doctors = pgTable('doctors', {
+export const incidents = pgTable('incidents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id), // victim
+  triggerType: varchar('trigger_type', { length: 50 }).notNull(),
+  status: incidentStatusEnum('status').default('active').notNull(),
+  location: jsonb('location').$type<{ lat: number; lon: number; accuracy_m: number; source: string }>().notNull(),
+  connectivity: jsonb('connectivity').$type<{ internet: boolean; sms: boolean; battery: number }>().notNull(),
+  voiceText: text('voice_text'),
+  imagePresent: boolean('image_present').default(false),
+  triageProfile: jsonb('triage_profile').$type<Record<string, unknown>>(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const hospitals = pgTable('hospitals', {
   id: uuid('id').defaultRandom().primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
-  department: varchar('department', { length: 100 }).notNull(),
-  specialization: varchar('specialization', { length: 255 }),
-  schedule: jsonb('schedule').$type<DoctorSchedule>().default({}),
+  location: jsonb('location').$type<{ lat: number; lon: number }>().notNull(),
+  capabilities: jsonb('capabilities').$type<string[]>().default([]),
+  capacityMetrics: jsonb('capacity_metrics').$type<{ traumaLevel: number; emergencyBedsAvailable: number; load: string }>().notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
-// ─── Appointments ────────────────────────────────────────
-
-export const appointments = pgTable('appointments', {
+export const ambulances = pgTable('ambulances', {
   id: uuid('id').defaultRandom().primaryKey(),
-  patientId: uuid('patient_id')
-    .notNull()
-    .references(() => patients.id),
-  doctorId: uuid('doctor_id')
-    .notNull()
-    .references(() => doctors.id),
-  department: varchar('department', { length: 100 }).notNull(),
-  slotTime: timestamp('slot_time').notNull(),
-  status: appointmentStatusEnum('status').default('booked').notNull(),
-  appointmentType: varchar('appointment_type', { length: 100 }).default('general'),
-  notes: text('notes'),
-  requiredDocuments: jsonb('required_documents').$type<string[]>().default([]),
+  vehicleId: varchar('vehicle_id', { length: 50 }).notNull(),
+  status: varchar('status', { length: 50 }).default('available').notNull(),
+  currentLocation: jsonb('current_location').$type<{ lat: number; lon: number }>(),
+  incidentId: uuid('incident_id').references(() => incidents.id),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const trustedContacts = pgTable('trusted_contacts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id).notNull(),
+  name: varchar('name', { length: 255 }).notNull(),
+  phone: varchar('phone', { length: 20 }).notNull(),
+  relation: varchar('relation', { length: 100 }),
+  isRelayCapable: boolean('is_relay_capable').default(true),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
 // ─── Workflows ───────────────────────────────────────────
 
 export const workflows = pgTable('workflows', {
   id: uuid('id').defaultRandom().primaryKey(),
-  type: varchar('type', { length: 100 }).notNull(), // e.g. 'pre_visit_intake'
+  type: varchar('type', { length: 100 }).notNull(), // e.g. 'emergency_orchestration'
   status: workflowStatusEnum('status').default('created').notNull(),
-  patientId: uuid('patient_id').references(() => patients.id),
-  appointmentId: uuid('appointment_id').references(() => appointments.id),
+  incidentId: uuid('incident_id').references(() => incidents.id),
   context: jsonb('context').$type<Record<string, unknown>>().default({}),
   result: jsonb('result').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -143,57 +140,35 @@ export const auditLogs = pgTable('audit_logs', {
   timestamp: timestamp('timestamp').defaultNow().notNull(),
 });
 
-// ─── Approval Requests ───────────────────────────────────
-
-export const approvalRequests = pgTable('approval_requests', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  workflowId: uuid('workflow_id')
-    .notNull()
-    .references(() => workflows.id),
-  taskId: uuid('task_id').references(() => workflowTasks.id),
-  action: varchar('action', { length: 255 }).notNull(),
-  reason: text('reason').notNull(),
-  details: jsonb('details').$type<Record<string, unknown>>().default({}),
-  status: approvalStatusEnum('status').default('pending').notNull(),
-  decidedBy: varchar('decided_by', { length: 255 }),
-  decidedAt: timestamp('decided_at'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-});
-
 // ─── Relations ───────────────────────────────────────────
 
-export const patientsRelations = relations(patients, ({ many }) => ({
-  appointments: many(appointments),
+export const usersRelations = relations(users, ({ many }) => ({
+  incidents: many(incidents),
+  trustedContacts: many(trustedContacts),
+}));
+
+export const incidentsRelations = relations(incidents, ({ one, many }) => ({
+  user: one(users, { fields: [incidents.userId], references: [users.id] }),
   workflows: many(workflows),
+  ambulances: many(ambulances)
 }));
 
-export const doctorsRelations = relations(doctors, ({ many }) => ({
-  appointments: many(appointments),
+export const trustedContactsRelations = relations(trustedContacts, ({ one }) => ({
+  user: one(users, { fields: [trustedContacts.userId], references: [users.id] })
 }));
 
-export const appointmentsRelations = relations(appointments, ({ one }) => ({
-  patient: one(patients, {
-    fields: [appointments.patientId],
-    references: [patients.id],
-  }),
-  doctor: one(doctors, {
-    fields: [appointments.doctorId],
-    references: [doctors.id],
-  }),
+export const hospitalsRelations = relations(hospitals, () => ({}));
+export const ambulancesRelations = relations(ambulances, ({ one }) => ({
+  incident: one(incidents, { fields: [ambulances.incidentId], references: [incidents.id] })
 }));
 
 export const workflowsRelations = relations(workflows, ({ one, many }) => ({
-  patient: one(patients, {
-    fields: [workflows.patientId],
-    references: [patients.id],
-  }),
-  appointment: one(appointments, {
-    fields: [workflows.appointmentId],
-    references: [appointments.id],
+  incident: one(incidents, {
+    fields: [workflows.incidentId],
+    references: [incidents.id],
   }),
   tasks: many(workflowTasks),
   auditLogs: many(auditLogs),
-  approvalRequests: many(approvalRequests),
 }));
 
 export const workflowTasksRelations = relations(workflowTasks, ({ one }) => ({
@@ -210,50 +185,18 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   }),
 }));
 
-export const approvalRequestsRelations = relations(approvalRequests, ({ one }) => ({
-  workflow: one(workflows, {
-    fields: [approvalRequests.workflowId],
-    references: [workflows.id],
-  }),
-}));
-
 // ─── TypeScript Types ────────────────────────────────────
 
-export interface PatientDocument {
-  type: string;       // e.g. 'insurance_card', 'id_proof', 'referral_letter'
-  name: string;
-  uploadedAt?: string;
-  verified: boolean;
-}
-
-export interface PatientDemographics {
-  address?: string;
-  city?: string;
-  state?: string;
-  zipCode?: string;
-  emergencyContact?: string;
-  emergencyPhone?: string;
-  bloodGroup?: string;
-  allergies?: string[];
-}
-
-export interface DoctorSchedule {
-  [day: string]: {    // e.g. 'monday', 'tuesday'
-    slots: string[];  // e.g. ['09:00', '09:30', '10:00']
-    available: boolean;
-  };
-}
-
-// Inferred types for queries
-export type Patient = typeof patients.$inferSelect;
-export type NewPatient = typeof patients.$inferInsert;
-export type Doctor = typeof doctors.$inferSelect;
-export type NewDoctor = typeof doctors.$inferInsert;
-export type Appointment = typeof appointments.$inferSelect;
-export type NewAppointment = typeof appointments.$inferInsert;
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
 export type Workflow = typeof workflows.$inferSelect;
 export type NewWorkflow = typeof workflows.$inferInsert;
 export type WorkflowTask = typeof workflowTasks.$inferSelect;
 export type NewWorkflowTask = typeof workflowTasks.$inferInsert;
 export type AuditLog = typeof auditLogs.$inferSelect;
-export type ApprovalRequest = typeof approvalRequests.$inferSelect;
+export type Incident = typeof incidents.$inferSelect;
+export type NewIncident = typeof incidents.$inferInsert;
+export type Hospital = typeof hospitals.$inferSelect;
+export type NewHospital = typeof hospitals.$inferInsert;
+export type Ambulance = typeof ambulances.$inferSelect;
+export type TrustedContact = typeof trustedContacts.$inferSelect;

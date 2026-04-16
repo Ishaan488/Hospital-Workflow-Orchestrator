@@ -3,15 +3,13 @@ import { useState } from 'react';
 import Link from 'next/link';
 
 const SCENARIOS = [
-  { id: 1, name: 'Happy Path',       badge: 'badge-green',  description: 'Complete docs + valid insurance → auto-completes',                 tag: 'Full automation' },
-  { id: 2, name: 'Missing Insurance',badge: 'badge-amber',  description: 'Card missing → reminder sent, slot held provisional',              tag: 'Communication agent' },
-  { id: 3, name: 'Pre-Auth Required',badge: 'badge-blue',   description: 'Procedure needs insurer pre-auth → submitted + monitored',         tag: 'Insurance agent' },
-  { id: 4, name: 'Reschedule Needed',badge: 'badge-red',    description: 'High delay risk → alternatives proposed → human approval',         tag: 'Human approval gate' },
-  { id: 5, name: 'Multi-Item Missing',badge: 'badge-violet', description: 'ID + referral + demographics missing → parallel agents',          tag: 'Full swarm' },
+  { id: 1, name: 'Normal Flow',       badge: 'badge-emerald',description: 'Full Internet Connectivity → Full Agentic Chain',                 tag: 'Standard' },
+  { id: 2, name: 'Mesh Relay',        badge: 'badge-amber',  description: 'Internet Saturated → Node Broadcast + Local Triage',              tag: 'Fallback' },
+  { id: 3, name: 'Replanning',        badge: 'badge-crimson',description: 'Condition worsens → Re-triage and Dispatch alternatives',         tag: 'Dynamic' },
 ];
 
 interface GodModePanelProps {
-  onWorkflowTriggered: (workflowId: string, scenarioName: string) => void;
+  onWorkflowTriggered: (workflowId: string) => void;
 }
 
 export default function GodModePanel({ onWorkflowTriggered }: GodModePanelProps) {
@@ -30,7 +28,7 @@ export default function GodModePanel({ onWorkflowTriggered }: GodModePanelProps)
       });
       const data = await res.json();
       setLastResult(data);
-      if (data.workflowId) onWorkflowTriggered(data.workflowId, data.scenarioName);
+      if (data.workflowId) onWorkflowTriggered(data.workflowId);
     } catch {
       setLastResult({ error: 'Backend not reachable. Start the server first.' });
     } finally {

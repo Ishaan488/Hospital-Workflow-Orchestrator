@@ -12,8 +12,7 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string; accent: stri
   created:          { label: 'Created',          badge: 'badge-muted',   accent: 'var(--c-ink-muted)' },
   planning:         { label: 'Planning',          badge: 'badge-violet',  accent: 'var(--c-violet)' },
   in_progress:      { label: 'In Progress',       badge: 'badge-blue',    accent: 'var(--c-cobalt)' },
-  waiting_approval: { label: 'Awaiting Approval', badge: 'badge-amber',   accent: 'var(--c-amber)' },
-  waiting_patient:  { label: 'Waiting Patient',   badge: 'badge-amber',   accent: 'var(--c-amber)' },
+  waiting_external: { label: 'Waiting External',  badge: 'badge-muted',   accent: 'var(--c-ink-muted)' },
   completed:        { label: 'Completed',         badge: 'badge-green',   accent: 'var(--c-emerald)' },
   failed:           { label: 'Failed',            badge: 'badge-red',     accent: 'var(--c-crimson)' },
   escalated:        { label: 'Escalated',         badge: 'badge-red',     accent: 'var(--c-crimson)' },
@@ -27,30 +26,22 @@ export default function WorkflowDetail({ params }: { params: Promise<{ id: strin
   const [reasoningEvents, setReasoningEvents] = useState<any[]>([]);
   const [reasoningOpen, setReasoningOpen] = useState(false);
   const [selectedReasoning, setSelectedReasoning] = useState<any>(null);
-  const [approvals, setApprovals] = useState<any[]>([]);
 
   useEffect(() => {
     if (!id) return;
     fetch(`http://localhost:4000/api/workflows/${id}`)
-      .then(r => r.json()).then(d => setWorkflow(d.data)).catch(() => {});
-    fetch(`http://localhost:4000/api/workflows/${id}/audit`)
-      .then(r => r.json()).then(d => setAuditLogs(d.logs ?? [])).catch(() => {});
-    fetch(`http://localhost:4000/api/approvals?workflowId=${id}`)
       .then(r => r.json())
-      .then(d => setApprovals(Array.isArray(d) ? d.filter((a: any) => a.workflowId === id && a.status === 'pending') : []))
+      .then(d => {
+        setWorkflow(d.data);
+        if (d.data?.auditTrail) {
+          setAuditLogs(d.data.auditTrail);
+        }
+      })
       .catch(() => {});
   }, [id]);
 
   function handleReasoningEvent(event: any) {
     setReasoningEvents(prev => [...prev, { ...event, timestamp: event.timestamp ?? new Date().toISOString() }]);
-  }
-
-  async function handleApproval(approvalId: string, action: 'approve' | 'reject') {
-    await fetch(`http://localhost:4000/api/approvals/${approvalId}/${action}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ decidedBy: 'ops_console_user' }),
-    });
-    setApprovals(prev => prev.filter(a => a.id !== approvalId));
   }
 
   async function handleStop() {
@@ -94,7 +85,7 @@ export default function WorkflowDetail({ params }: { params: Promise<{ id: strin
             <div>
               <p style={{ fontSize: 'var(--t-16)', fontWeight: 700, color: 'var(--c-emerald)' }}>Workflow Completed</p>
               <p style={{ fontSize: 'var(--t-12)', color: 'var(--c-ink-2)', marginTop: 2 }}>
-                All goals met. Patient notified and EHR updated.
+                All goals met.
               </p>
             </div>
           </div>
@@ -127,9 +118,6 @@ export default function WorkflowDetail({ params }: { params: Promise<{ id: strin
                 <span className={`badge ${s.badge}`}>{s.label}</span>
               </div>
               <p style={{ fontSize: 'var(--t-11)', color: 'var(--c-ink-muted)', fontFamily: 'inherit' }}>ID: {id}</p>
-              {workflow.patientId && (
-                <p style={{ fontSize: 'var(--t-12)', color: 'var(--c-ink-2)', marginTop: 'var(--sp-1)' }}>Patient: {workflow.patientId}</p>
-              )}
             </div>
             <div style={{ display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap', alignItems: 'center' }}>
               {reasoningEvents.length > 0 && (
@@ -137,43 +125,13 @@ export default function WorkflowDetail({ params }: { params: Promise<{ id: strin
                   ⚡ Reasoning ({reasoningEvents.length})
                 </button>
               )}
-              {workflow.status === 'waiting_approval' && (
-                <Link href="/approvals" className="btn-primary">Review Approval →</Link>
-              )}
-              {['in_progress', 'planning', 'waiting_approval', 'waiting_patient'].includes(workflow.status) && (
+              {['in_progress', 'planning'].includes(workflow.status) && (
                 <button className="btn-reject" onClick={handleStop}>Stop</button>
               )}
               <button onClick={handleDelete} className="btn-ghost">Delete</button>
             </div>
           </div>
         </div>
-
-        {/* Inline approvals */}
-        {approvals.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-            {approvals.map((ap: any) => (
-              <div key={ap.id} style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-6)',
-                padding: 'var(--sp-5) var(--sp-6)',
-                border: '3px solid var(--c-amber)',
-                background: 'var(--c-amber-bg)',
-              }}>
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)', marginBottom: 'var(--sp-2)' }}>
-                    <span className="badge badge-amber">⏸ Approval Required</span>
-                    <span style={{ fontSize: 'var(--t-11)', color: 'var(--c-ink-muted)', fontFamily: 'inherit' }}>{ap.id?.slice(0, 14)}</span>
-                  </div>
-                  <p style={{ fontSize: 'var(--t-14)', fontWeight: 700, color: 'var(--c-ink)' }}>{ap.action}</p>
-                  <p style={{ fontSize: 'var(--t-12)', color: 'var(--c-ink-2)', marginTop: 2 }}>{ap.reason}</p>
-                </div>
-                <div style={{ display: 'flex', gap: 'var(--sp-3)', flexShrink: 0 }}>
-                  <button className="btn-approve" onClick={() => handleApproval(ap.id, 'approve')}>Approve</button>
-                  <button className="btn-reject" onClick={() => handleApproval(ap.id, 'reject')}>Reject</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* Agent Graph */}
         <div>

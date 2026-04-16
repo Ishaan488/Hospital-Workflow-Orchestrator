@@ -1,22 +1,16 @@
 import type { Metadata } from 'next';
-import { Geist_Mono } from 'next/font/google';
 import './globals.css';
 import SidebarNav from './components/SidebarNav';
 
-const geistMono = Geist_Mono({
-  subsets: ['latin'],
-  variable: '--font-geist-mono',
-});
-
 export const metadata: Metadata = {
   title: 'OPS Console',
-  description: 'Hospital Workflow Orchestration — Ops Console',
+  description: 'Philips Pre-Hospital Emergency Orchestrator',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={geistMono.variable}>
-      <body className={geistMono.className}>
+    <html lang="en">
+      <body>
         <div style={{
           display: 'grid',
           gridTemplateColumns: '220px 1fr',

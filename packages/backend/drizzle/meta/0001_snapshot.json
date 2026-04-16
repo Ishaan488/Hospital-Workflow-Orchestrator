@@ -1,6 +1,6 @@
 {
-  "id": "3cc9c3b5-917c-4248-907d-a44506358d9e",
-  "prevId": "00000000-0000-0000-0000-000000000000",
+  "id": "af92e479-f855-4cf0-a382-7bbcc731fdde",
+  "prevId": "3cc9c3b5-917c-4248-907d-a44506358d9e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -655,7 +655,6 @@
         "pending",
         "assigned",
         "in_progress",
-        "waiting_approval",
         "completed",
         "failed",
         "skipped"
@@ -668,7 +667,6 @@
         "created",
         "planning",
         "in_progress",
-        "waiting_approval",
         "waiting_external",
         "completed",
         "failed",

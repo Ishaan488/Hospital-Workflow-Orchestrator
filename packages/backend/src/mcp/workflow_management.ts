@@ -14,7 +14,7 @@ import { z } from 'zod';
 import { createMCPServer, connectMCPServer, simulateLatency } from './base';
 import { mcpRegistry } from './registry';
 import { db } from '../db/connection';
-import { auditLogs, workflowTasks, approvalRequests } from '../db/schema';
+import { auditLogs, workflowTasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 
 const SERVER_NAME = 'workflow_management';
@@ -72,13 +72,13 @@ export async function initTaskAuditMCP(): Promise<void> {
   // ─── Tool: update_task_status ─────────────────────────
   const updateTaskSchema = {
     task_id: z.string().describe('UUID of the task to update'),
-    status: z.enum(['pending', 'assigned', 'in_progress', 'waiting_approval', 'completed', 'failed', 'skipped']).describe('New task status'),
+    status: z.enum(['pending', 'assigned', 'in_progress', 'completed', 'failed', 'skipped']).describe('New task status'),
     output: z.record(z.any()).optional().describe('Final output/results of the task'),
   };
 
   async function updateTaskHandler(args: { 
     task_id: string; 
-    status: 'pending' | 'assigned' | 'in_progress' | 'waiting_approval' | 'completed' | 'failed' | 'skipped';
+    status: 'pending' | 'assigned' | 'in_progress' | 'completed' | 'failed' | 'skipped';
     output?: Record<string, any> 
   }): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
     const { task_id, status, output } = args;
@@ -116,52 +116,7 @@ export async function initTaskAuditMCP(): Promise<void> {
   }
   server.tool('update_task_status', 'Update the status and result of a workflow task', updateTaskSchema as any, updateTaskHandler as any);
 
-  // ─── Tool: create_approval_request ────────────────────
-  const createApprovalSchema = {
-    workflow_id: z.string().describe('UUID of the workflow'),
-    task_id: z.string().describe('UUID of the task requiring approval'),
-    action: z.string().describe('The action being requested (e.g., "Bypass missing document")'),
-    reason: z.string().describe('The justification for the manual intervention'),
-    details: z.record(z.any()).optional().describe('Supporting data for the decision'),
-  };
-
-  async function createApprovalHandler(args: { 
-    workflow_id: string; 
-    task_id: string; 
-    action: string; 
-    reason: string; 
-    details?: Record<string, any> 
-  }): Promise<{ content: { type: "text"; text: string }[]; isError?: boolean }> {
-    const { workflow_id, task_id, action, reason, details } = args;
-    await simulateLatency(LATENCY_MS);
-
-    const request = await db.insert(approvalRequests).values({
-      workflowId: workflow_id,
-      taskId: task_id,
-      action,
-      reason,
-      details: details || {},
-      status: 'pending',
-    }).returning();
-
-    // Also update task status automatically to 'waiting_approval'
-    await db.update(workflowTasks)
-      .set({ status: 'waiting_approval', updatedAt: new Date() })
-      .where(eq(workflowTasks.id, task_id));
-
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify({
-          success: true,
-          approvalId: request[0].id,
-          status: 'pending',
-          message: 'Approval request created. Task status updated to waiting_approval.',
-        }),
-      }],
-    };
-  }
-  server.tool('create_approval_request', 'Submit a request for human intervention/approval', createApprovalSchema as any, createApprovalHandler as any);
+  // Removed create_approval_request tool to match schema.
 
   // Phase 2: Connect transport
   const { client } = await connectMCPServer(server, config);

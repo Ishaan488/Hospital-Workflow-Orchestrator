@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { workflows, workflowTasks, auditLogs, patients, appointments } from '../db/schema';
+import { workflows, workflowTasks, auditLogs, users, incidents } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
 
 const router = Router();
@@ -13,9 +13,7 @@ router.get('/', async (_req, res) => {
         id: workflows.id,
         type: workflows.type,
         status: workflows.status,
-        patientId: workflows.patientId,
-        patientName: patients.name,
-        appointmentId: workflows.appointmentId,
+        patientName: users.name,
         context: workflows.context,
         result: workflows.result,
         createdAt: workflows.createdAt,
@@ -23,7 +21,8 @@ router.get('/', async (_req, res) => {
         completedAt: workflows.completedAt,
       })
       .from(workflows)
-      .leftJoin(patients, eq(workflows.patientId, patients.id))
+      .leftJoin(incidents, eq(workflows.incidentId, incidents.id))
+      .leftJoin(users, eq(incidents.userId, users.id))
       .orderBy(desc(workflows.createdAt));
 
     res.json({
@@ -47,11 +46,7 @@ router.get('/:id', async (req, res) => {
         id: workflows.id,
         type: workflows.type,
         status: workflows.status,
-        patientId: workflows.patientId,
-        patientName: patients.name,
-        appointmentId: workflows.appointmentId,
-        appointmentSlot: appointments.slotTime,
-        appointmentDepartment: appointments.department,
+        patientName: users.name,
         context: workflows.context,
         result: workflows.result,
         createdAt: workflows.createdAt,
@@ -59,8 +54,8 @@ router.get('/:id', async (req, res) => {
         completedAt: workflows.completedAt,
       })
       .from(workflows)
-      .leftJoin(patients, eq(workflows.patientId, patients.id))
-      .leftJoin(appointments, eq(workflows.appointmentId, appointments.id))
+      .leftJoin(incidents, eq(workflows.incidentId, incidents.id))
+      .leftJoin(users, eq(incidents.userId, users.id))
       .where(eq(workflows.id, workflowId));
 
     if (workflowResult.length === 0) {

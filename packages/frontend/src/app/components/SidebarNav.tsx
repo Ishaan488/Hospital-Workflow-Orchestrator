@@ -6,18 +6,24 @@ import { useEffect, useState } from 'react';
 const NAV = [
   { href: '/',           label: 'Dashboard' },
   { href: '/workflows',  label: 'Workflows' },
-  { href: '/approvals',  label: 'Approvals' },
 ];
 
 const AGENT_COLORS: Record<string, string> = {
-  orchestrator:  'var(--c-violet)',
-  intake:        'var(--c-cobalt)',
-  insurance:     '#0e7490',
-  scheduling:    'var(--c-emerald)',
-  communication: 'var(--c-amber)',
+  orchestrator:     'var(--c-violet)',
+  incident:         'var(--c-cobalt)',
+  triage:           '#0e7490',
+  hospitalmatching: 'var(--c-emerald)',
+  dispatch:         'var(--c-amber)',
+  contact:          '#be185d',
+  guidance:         '#a855f7',
+  handover:         '#f97316',
+  audit:            '#64748b'
 };
 
-const AGENTS = ['orchestrator', 'intake', 'insurance', 'scheduling', 'communication'];
+const AGENTS = [
+  'orchestrator', 'incident', 'triage', 'hospitalmatching',
+  'dispatch', 'contact', 'guidance', 'handover', 'audit'
+];
 
 export default function SidebarNav() {
   const pathname = usePathname();

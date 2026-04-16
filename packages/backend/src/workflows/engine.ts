@@ -13,14 +13,14 @@ export class WorkflowEngine {
   /**
    * Initializes a brand new workflow instance based on an external pulse/event.
    */
-  public async createWorkflow(type: string, triggerEvent: Record<string, any>, patientId?: string): Promise<string> {
+  public async createWorkflow(type: string, triggerEvent: Record<string, any>, incidentId?: string): Promise<string> {
     const workflowId = randomUUID();
     
     await db.insert(workflows).values({
       id: workflowId,
       type,
       status: 'created',
-      patientId: patientId ?? null,
+      incidentId: incidentId ?? null,
       context: { trigger: triggerEvent },
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -48,6 +48,17 @@ export class WorkflowEngine {
     });
 
     return taskId;
+  }
+
+  public async markTaskDispatched(taskId: string): Promise<void> {
+    await db.update(workflowTasks)
+      .set({ status: 'in_progress', updatedAt: new Date() })
+      .where(eq(workflowTasks.id, taskId));
+  }
+
+  public async hasRunningTasks(workflowId: string): Promise<boolean> {
+    const allTasks = await db.select().from(workflowTasks).where(eq(workflowTasks.workflowId, workflowId));
+    return allTasks.some(t => t.status === 'in_progress' || t.status === 'assigned');
   }
 
   /**
