@@ -23,7 +23,7 @@ import 'reactflow/dist/style.css';
 //       Contact    Handover
 //
 const AGENTS = [
-  { id: 'orchestrator',     label: 'Orchestrator',      sub: 'Gemini Planner',          color: '#5c00d3', x: 340, y: 220 },
+  { id: 'orchestrator',     label: 'Orchestrator',      sub: 'AI Coordinator',          color: '#5c00d3', x: 340, y: 220 },
   { id: 'incident',         label: 'Incident',          sub: 'Extract Facts',           color: '#0047e1', x: 60,  y: 60  },
   { id: 'audit',            label: 'Audit',             sub: 'Policy + Safety',         color: '#64748b', x: 390, y: 60  },
   { id: 'triage',           label: 'Triage',            sub: 'Triage Profile',          color: '#0e7490', x: 620, y: 60  },

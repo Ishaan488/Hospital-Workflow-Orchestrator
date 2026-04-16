@@ -77,9 +77,9 @@ ${JSON.stringify(recentOutputs, null, 2)}
 
 DECISION GUIDE — Read semantic flags from agent outputs:
 - If action was IncidentAgent: extract_incident_facts → schedule TriageAgent(generate_triage_profile)
-- If action was TriageAgent: generate_triage_profile → schedule HospitalMatchingAgent(rank_hospitals) and GuidanceAgent(provide_first_aid_instructions)
-- If action was HospitalMatchingAgent: rank_hospitals → schedule DispatchAgent(request_dispatch), ContactAgent(notify_relatives), and HandoverAgent(send_pre_arrival_packet)
-- If action was DispatchAgent, ContactAgent, or HandoverAgent, and all 3 are done → mark workflow "completed".
+- If action was TriageAgent: generate_triage_profile → schedule HospitalMatchingAgent(rank_hospitals) passing "condition": "triage_profile.probable_case" in payload, and GuidanceAgent(provide_first_aid_instructions)
+- If action was HospitalMatchingAgent: rank_hospitals → schedule DispatchAgent(request_dispatch), ContactAgent(notify_relatives), HandoverAgent(send_pre_arrival_packet), and AuditAgent(verify_action_safety)
+- If action was DispatchAgent, ContactAgent, HandoverAgent, or AuditAgent, and all 4 are done → mark workflow "completed".
 - If status="blocked" → workflow waits. No new tasks needed.
 - If all necessary tasks completed and no blockers → mark workflow "completed".
 

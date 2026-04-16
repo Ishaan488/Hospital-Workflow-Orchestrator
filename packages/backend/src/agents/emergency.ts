@@ -13,13 +13,13 @@ export class IncidentAgent extends BaseAgent {
     const { action, incident_id } = payload;
     
     if (action === 'extract_incident_facts') {
-      const toolRes = await this.callMCPTool('emergency', 'speech_to_text', { audio_blob: "audio_123" }, task.workflowId);
-      const summaryRes = await this.callMCPTool('emergency', 'summarize_victim_statement', { text: toolRes.text || "Car crash, leg bleeding" }, task.workflowId);
+      const toolRes = await this.callMCPTool('emergency', 'speech_to_text', { incident_id }, task.workflowId);
+      const summaryRes = await this.callMCPTool('emergency', 'summarize_victim_statement', { text: toolRes.text || "Unknown statement" }, task.workflowId);
       
       await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'facts_extracted',
         incident_id,
-        summary: summaryRes.summary || "Severe leg bleeding after car crash",
+        summary: summaryRes.summary || summaryRes,
       }));
     } else {
       await this.sendStatusUpdate(task.id, 'failed', `Unknown action: ${action}`);
@@ -53,9 +53,9 @@ export class HospitalMatchingAgent extends BaseAgent {
   }
 
   public async handleTask(task: A2ATask): Promise<void> {
-    const { action, incident_id } = JSON.parse(task.inputMessage.parts[0].text || '{}');
+    const { action, incident_id, condition } = JSON.parse(task.inputMessage.parts[0].text || '{}');
     if (action === 'rank_hospitals') {
-      const response = await this.callMCPTool('emergency', 'search_nearby_hospitals', { location: {} }, task.workflowId);
+      const response = await this.callMCPTool('emergency', 'search_nearby_hospitals', { location: {}, condition }, task.workflowId);
       await this.sendStatusUpdate(task.id, 'completed', JSON.stringify({
         status: 'hospital_matched',
         incident_id,

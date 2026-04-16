@@ -59,7 +59,11 @@ demoRouter.post('/api/demo/trigger', async (req, res) => {
       triggerType: scenarioNum === 2 ? 'mesh_relay_triggered' : 'emergency_incident',
       location: { lat: 37.7749, lon: -122.4194, accuracy_m: 5, source: 'gps' },
       connectivity: { internet: scenarioNum !== 2, sms: true, battery: 85 },
-      voiceText: 'I need help, severe chest pain',
+      voiceText: scenarioNum === 1 
+        ? "I just got into a car crash on highway 10, my leg is bleeding badly and I cannot stand. Please help."
+        : scenarioNum === 2
+        ? "[SMS RELAY] Hiker fallen off red trail. Broken arm, head injury. No internet signal here."
+        : "Mild chest pain... Wait, he collapsed! He is completely unconscious and not breathing!",
       createdAt: new Date(),
       updatedAt: new Date(),
     });

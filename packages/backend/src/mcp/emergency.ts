@@ -6,6 +6,9 @@
 import { z } from 'zod';
 import { createMCPServer, connectMCPServer, simulateLatency } from './base';
 import { mcpRegistry } from './registry';
+import { db } from '../db/connection';
+import { incidents } from '../db/schema';
+import { eq } from 'drizzle-orm';
 
 const SERVER_NAME = 'emergency';
 const LATENCY_MS = 200;
@@ -19,37 +22,69 @@ export async function initEmergencyMCP(): Promise<void> {
   });
 
   // 1. Speech to Text
-  server.tool('speech_to_text', 'Converts raw radio/audio input into text', { audio_blob: z.string() }, async () => {
+  server.tool('speech_to_text', 'Converts raw radio/audio input into text', { incident_id: z.string() }, async (args) => {
     await simulateLatency(LATENCY_MS);
+    const incident = await db.query.incidents.findFirst({ where: eq(incidents.id, args.incident_id) });
+    const text = incident?.voiceText || "Unknown incident audio";
     return {
-      content: [{ type: "text", text: JSON.stringify({ text: "I just got into a car crash on highway 10, my leg is bleeding badly and I cannot stand. Please help." }) }],
+      content: [{ type: "text", text: JSON.stringify({ text }) }],
     };
   });
 
   // 2. Summarize Victim Statement
   server.tool('summarize_victim_statement', 'Extracts key facts from raw statement', { text: z.string() }, async (args) => {
     await simulateLatency(LATENCY_MS);
+    let summary = "Unknown emergency";
+    if (args.text.toLowerCase().includes("car crash")) {
+      summary = "Severe leg bleeding after car crash, victim unable to stand.";
+    } else if (args.text.toLowerCase().includes("hiker")) {
+      summary = "Hiker fallen. Broken arm, head injury. Offline SMS relay used.";
+    } else if (args.text.toLowerCase().includes("chest pain") || args.text.toLowerCase().includes("collapsed")) {
+      summary = "Patient originally had chest pain, has now collapsed and is unconscious/not breathing.";
+    }
     return {
-      content: [{ type: "text", text: JSON.stringify({ summary: "Severe leg bleeding after car crash, victim unable to stand." }) }],
+      content: [{ type: "text", text: JSON.stringify({ summary }) }],
     };
   });
 
   // 3. Classify Incident
-  server.tool('classify_incident', 'Outputs a structured Triage Profile', { summary: z.string() }, async () => {
+  server.tool('classify_incident', 'Outputs a structured Triage Profile', { summary: z.string() }, async (args) => {
     await simulateLatency(LATENCY_MS);
+    let profile = { urgency: "medium", ambulance_required: true, probable_case: "general", guidance_class: "general" };
+    
+    if (args.summary.includes("bleeding")) {
+      profile = { urgency: "high", ambulance_required: true, probable_case: "trauma_bleeding", guidance_class: "bleeding_control" };
+    } else if (args.summary.includes("Hiker")) {
+      profile = { urgency: "high", ambulance_required: true, probable_case: "fall_trauma_head", guidance_class: "head_injury_offline" };
+    } else if (args.summary.includes("unconscious")) {
+      profile = { urgency: "critical", ambulance_required: true, probable_case: "cardiac_arrest", guidance_class: "cpr_immediate" };
+    }
+    
     return {
-      content: [{ type: "text", text: JSON.stringify({ urgency: "high", ambulance_required: true, probable_case: "trauma_bleeding", guidance_class: "bleeding_control_safe" }) }],
+      content: [{ type: "text", text: JSON.stringify(profile) }],
     };
   });
 
   // 4. Search Nearby Hospitals
-  server.tool('search_nearby_hospitals', 'Finds trauma capable hospitals and capacities', { location: z.record(z.any()) }, async () => {
+  server.tool('search_nearby_hospitals', 'Finds trauma capable hospitals and capacities', { location: z.record(z.any()), condition: z.string().optional() }, async (args) => {
     await simulateLatency(LATENCY_MS);
+    let results = [
+      { id: "hosp_1", name: "City General", traumaLevel: 1, capacity: "critical", eta_mins: 15 },
+      { id: "hosp_2", name: "St. Jude Trauma Center", traumaLevel: 1, capacity: "moderate", eta_mins: 10 }
+    ];
+    
+    if (args.condition === 'cardiac_arrest') {
+      results = [
+        { id: "hosp_3", name: "Mercy Cardiac Care", traumaLevel: 2, capacity: "available", eta_mins: 6 }
+      ];
+    } else if (args.condition === 'fall_trauma_head') {
+       results = [
+        { id: "hosp_4", name: "County Rescue Heli-pad", traumaLevel: 1, capacity: "available", eta_mins: 22 }
+      ];
+    }
+    
     return {
-      content: [{ type: "text", text: JSON.stringify([
-        { id: "hosp_1", name: "City General", traumaLevel: 1, capacity: "critical", eta_mins: 15 },
-        { id: "hosp_2", name: "St. Jude Trauma Center", traumaLevel: 1, capacity: "moderate", eta_mins: 10 }
-      ]) }],
+      content: [{ type: "text", text: JSON.stringify(results) }],
     };
   });
 

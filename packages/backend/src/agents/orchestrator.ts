@@ -17,7 +17,7 @@ export class OrchestratorAgent extends BaseAgent {
   constructor() {
     super(
       'OrchestratorAgent',
-      'Central Gemini-powered orchestrator. Determines workflow routing and schedules tasks.',
+      'Central AI-powered orchestrator. Determines workflow routing and schedules tasks.',
       []
     );
     agentCardRegistry.registerCard(this.getAgentCard());
@@ -74,10 +74,10 @@ export class OrchestratorAgent extends BaseAgent {
   }
 
   /**
-   * Invokes Gemini to dynamically determine which A2A Agents need to do what.
+   * Invokes the MedOrchestra AI to dynamically determine which A2A Agents need to do what.
    */
   private async planWorkflow(workflowId: string, context: any): Promise<void> {
-    await this.logAudit(workflowId, 'Invoking Gemini for initial workflow planning', { context });
+    await this.logAudit(workflowId, 'Invoking Coordinator AI for initial workflow planning', { context });
 
     try {
       const response = await ai.models.generateContent({
@@ -94,13 +94,13 @@ export class OrchestratorAgent extends BaseAgent {
       const jsonStr = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
       const plan = JSON.parse(jsonStr) as Array<{agent: string, action: string, payload: any, dependsOn: string[], id: string}>;
 
-      await this.logAudit(workflowId, 'Gemini generated task plan', { plan });
+      await this.logAudit(workflowId, 'AI generated task plan', { plan });
 
-      const internalIdMap = new Map<string, string>(); // Maps Gemini's "task_0" to real Postgres UUIDs
+      const internalIdMap = new Map<string, string>(); // Maps AI's "task_0" to real Postgres UUIDs
 
       // 1. First Pass: Insert into DB via WorkflowEngine
       for (const t of plan) {
-        // Map any string dependencies that Gemini hallucinated to the real UUIDs
+        // Map any string dependencies that the AI hallucinated to the real UUIDs
         const resolvedDeps = t.dependsOn.map(d => internalIdMap.get(d)).filter(Boolean) as string[];
 
         const realId = await workflowEngine.scheduleTask(workflowId, t.agent, t.action, t.payload, resolvedDeps);
@@ -114,14 +114,14 @@ export class OrchestratorAgent extends BaseAgent {
       await this.dispatchReadyTasks(workflowId);
 
     } catch (err: any) {
-      await this.logAudit(workflowId, 'Gemini Planning Failed', { error: err?.message || String(err) });
+      await this.logAudit(workflowId, 'AI Planning Failed', { error: err?.message || String(err) });
       await stateMachine.transition(workflowId, 'failed', `Orchestrator failed: ${err?.message || 'Invalid JSON plan'}`);
     }
   }
 
   /**
    * Resolves completed tasks against the DAG. If unblocked tasks exist, dispatch them.
-   * Otherwise, ask Gemini to evaluate the final outputs for next steps.
+   * Otherwise, ask the AI to evaluate the final outputs for next steps.
    */
   private async coordinateStep(workflowId: string, completedTaskId: string, output: any): Promise<void> {
     // 1. Mark task complete in the DAG
@@ -143,7 +143,7 @@ export class OrchestratorAgent extends BaseAgent {
         // The graph is completely exhausted (all paths terminated)
         // Check if everything is complete
         const currentState = await stateMachine.getCurrentState(workflowId);
-        await this.logAudit(workflowId, 'Sub-task graph exhausted. Re-evaluating overall workflow state with Gemini.', { currentState, lastOutput: output });
+        await this.logAudit(workflowId, 'Sub-task graph exhausted. Re-evaluating overall workflow state with AI Coordinator.', { currentState, lastOutput: output });
 
         const response = await ai.models.generateContent({
           model: 'gemini-flash-latest',
@@ -158,24 +158,24 @@ export class OrchestratorAgent extends BaseAgent {
         const jsonStr = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
         const decision = JSON.parse(jsonStr);
 
-        await this.logAudit(workflowId, 'Gemini Coordinator Decision', { decision });
+        await this.logAudit(workflowId, 'AI Coordinator Decision', { decision });
 
         if (decision.next_state) {
           await stateMachine.transition(workflowId, decision.next_state, decision.reasoning);
         }
 
-        // If Gemini realized it forgot something, or an error requires new steps:
+        // If the AI realized it forgot something, or an error requires new steps:
         if (decision.schedule_new_tasks && decision.schedule_new_tasks.length > 0) {
           for (const t of decision.schedule_new_tasks) {
             const deps = t.dependsOn || [];
             await workflowEngine.scheduleTask(workflowId, t.agent, t.action, t.payload || {}, deps);
           }
-          await this.logAudit(workflowId, 'Gemini generated follow-up tasks', { plan: decision.schedule_new_tasks });
+          await this.logAudit(workflowId, 'AI generated follow-up tasks', { plan: decision.schedule_new_tasks });
           await this.dispatchReadyTasks(workflowId);
         }
 
       } catch (err: any) {
-         await this.logAudit(workflowId, 'Gemini Coordinator Evaluation Failed', { error: err?.message || String(err) });
+         await this.logAudit(workflowId, 'AI Coordinator Evaluation Failed', { error: err?.message || String(err) });
          await stateMachine.transition(workflowId, 'failed', `Evaluation failed: ${err?.message || 'Invalid LLM response'}`);
       } finally {
          this.evaluationLocks.delete(workflowId);
